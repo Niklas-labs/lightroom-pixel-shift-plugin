@@ -53,7 +53,7 @@ jobs:
         run: |
           mkdir -p target/universal
           lipo -create target/aarch64-apple-darwin/release/sony-pixelshift target/x86_64-apple-darwin/release/sony-pixelshift -output target/universal/sony-pixelshift
-          lipo -verify_arch arm64 x86_64 target/universal/sony-pixelshift
+          lipo target/universal/sony-pixelshift -verify_arch arm64 x86_64
           codesign --force --sign - --timestamp=none target/universal/sony-pixelshift
           codesign --verify --verbose target/universal/sony-pixelshift
           otool -L target/universal/sony-pixelshift
