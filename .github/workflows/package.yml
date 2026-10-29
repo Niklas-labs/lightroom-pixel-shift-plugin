@@ -1,0 +1,117 @@
+name: Package Lightroom Plugin
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: package-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  assembler-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python scripts/test-package-unit.py
+
+  engine-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - run: cargo test --workspace --locked
+
+  macos:
+    needs: [assembler-tests, engine-tests]
+    # Current standard Apple Silicon runner; verify the executing architecture.
+    runs-on: macos-15
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '12.0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - name: Build both macOS architectures
+        run: |
+          cargo build --release --locked --target aarch64-apple-darwin -p pixelshift-cli
+          cargo build --release --locked --target x86_64-apple-darwin -p pixelshift-cli
+      - name: Assemble and ad-hoc sign universal engine
+        run: |
+          mkdir -p target/universal
+          lipo -create target/aarch64-apple-darwin/release/sony-pixelshift target/x86_64-apple-darwin/release/sony-pixelshift -output target/universal/sony-pixelshift
+          lipo -verify_arch arm64 x86_64 target/universal/sony-pixelshift
+          codesign --force --sign - --timestamp=none target/universal/sony-pixelshift
+          codesign --verify --verbose target/universal/sony-pixelshift
+          otool -L target/universal/sony-pixelshift
+      - name: Package self-contained plugin
+        run: python scripts/package-plugin.py --binary target/universal/sony-pixelshift --platform macos-universal --revision '${{ github.sha }}'
+      - name: Smoke-test extracted Apple Silicon package
+        run: python scripts/test-package.py --archive-dir dist --platform macos-universal --machine arm64,aarch64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SonyPixelShift-macos-universal
+          path: |
+            dist/*.zip
+            dist/*.sha256
+          if-no-files-found: error
+          retention-days: 30
+
+  macos-intel-smoke:
+    needs: macos
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: SonyPixelShift-macos-universal
+          path: dist
+      - name: Smoke-test the same universal ZIP natively on Intel
+        run: python scripts/test-package.py --archive-dir dist --platform macos-universal --machine x86_64,amd64
+
+  windows:
+    needs: [assembler-tests, engine-tests]
+    runs-on: windows-latest
+    env:
+      CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: '-C target-feature=+crt-static'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - name: Build Windows executable with static C runtime
+        run: cargo build --release --locked --target x86_64-pc-windows-msvc -p pixelshift-cli
+      - name: Package self-contained plugin
+        run: python scripts/package-plugin.py --binary target/x86_64-pc-windows-msvc/release/sony-pixelshift.exe --platform windows-x86_64 --revision '${{ github.sha }}'
+      - name: Smoke-test extracted Windows package without PATH tools
+        run: python scripts/test-package.py --archive-dir dist --platform windows-x86_64 --machine amd64,x86_64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SonyPixelShift-windows-x86_64
+          path: |
+            dist/*.zip
+            dist/*.sha256
+          if-no-files-found: error
+          retention-days: 30

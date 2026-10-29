@@ -47,10 +47,12 @@ Compare:
    denoise jobs. Establish an agreed release memory/time budget, then implement
    tiles and cancellation; none is measured or promised by this prototype.
 
-Real camera metadata currently verifies sequence count/order, exposure and model,
-not the complete Sony Pixel Shift mode/group identity. Add authenticated group
-and shot-mode validation before release so a normal four-frame burst cannot be
-mistaken for a Pixel Shift capture. Sequence numbers alone are insufficient.
+The installable alpha requires the native Sony PixelShiftInfo record for actual
+Pixel Shift merges, validates declared shot count, and rejects mixed group IDs.
+It prefers that record's source-shot index to the generic burst SequenceNumber.
+Ordinary burst denoise can operate without Pixel Shift indices. Synthetic TIFF
+fixtures test these fields in both byte orders; real a7CR firmware/compression
+variants still need comparison with ExifTool and Imaging Edge.
 
 ## Lightroom host gate
 

@@ -5,20 +5,44 @@ An executable Rust prototype and Lightroom Classic Lua plugin for **Sony a7CR
 Camera profiles are experimental: synthetic reconstruction is tested; real-camera
 and Lightroom host acceptance is still required. No original RAW is modified.
 
+## Install the CI build in Lightroom Classic
+
+Download the latest successful **Package Lightroom Plugin** workflow artifact:
+`SonyPixelShift-macos-universal` (Apple Silicon and Intel) or
+`SonyPixelShift-windows-x86_64`. Extract the GitHub artifact ZIP, then extract the
+distribution ZIP inside it. Move `SonyPixelShift.lrplugin` to a permanent location
+and add that directory using **File → Plug-in Manager → Add**.
+
+The package embeds the matching Rust executable. No separate engine selection,
+Rust, Python, Perl or ExifTool installation is required. CI development builds are
+not publisher-signed/notarized; macOS may require approving the specific helper
+in Privacy & Security. See [installation and testing](docs/lightroom-testing.md)
+and [CI packaging](docs/packaging.md).
+
+Select exactly four or sixteen original a7CR Pixel Shift ARWs, then choose
+**Library → Plug-in Extras → Merge Sony a7CR Pixel Shift** and a new TIFF output.
+The plugin checks its engine version, runs asynchronously and imports only a
+validated completed result. A separate menu handles RAW burst denoise. Failed
+jobs and diagnostic logs remain next to the chosen output for troubleshooting.
+
+Start with four shots; sixteen shots still use the original high-memory engine.
+DNG and tiled processing are not included in this first installable alpha.
+
 ## Build and run
 
-Install stable Rust and [ExifTool](https://exiftool.org/) (on PATH), then:
+Install stable Rust, then:
 
 ```sh
 cargo build --release --locked
-./target/release/sony-pixelshift cameras
+./target/release/sony-pixelshift info
 ./target/release/sony-pixelshift merge --job /photos/capture/job.json
 cargo test --workspace --locked
 cargo clippy --workspace --all-targets --locked -- -D warnings
 lua scripts/test-plugin.lua
+python3 scripts/test-package-unit.py
 ```
 
-Example `job.json` (input and output paths resolve against its directory):
+Example `job.json` (paths resolve against its directory):
 
 ```json
 {
@@ -32,56 +56,40 @@ Example `job.json` (input and output paths resolve against its directory):
 }
 ```
 
-Use `sixteen` with 16 files for twice the sensor width and height before cropping;
-use `denoise` for 2–64 ordinary RAW burst frames. Each input must have a unique
-Sony SequenceNumber forming 1..N; sorting uses metadata, not filenames. Burst
-sequences without these tags are currently rejected. Exposure, model, dimensions,
-CFA and camera serial (when available) must agree. JSON job version and fields
-are checked strictly. Existing output files are always refused; DNG output is
-explicitly rejected until its writer is implemented.
+Use `sixteen` with sixteen files for twice the sensor width and height before
+cropping. `denoise` uses 2–64 RAW burst files. Pixel Shift ordering comes from
+Sony metadata rather than filename order. Capture validation and native metadata
+coverage are experimental; retain your originals and report unsupported cases.
 
-The CLI prints decode progress and errors to stderr and one JSON completion
-record (including crop origin, residual alignment and fallback count) to stdout.
-Exit codes are 0 for success, 1 for processing failure, 2 for argument errors.
+The CLI prints progress/errors to stderr and a JSON completion record to stdout.
+`info --output FILE` writes the version/protocol handshake. Optional merge flags
+`--result FILE --log FILE` persist a completion/error record and diagnostics for
+the plugin. Logs append to their destination; result and image files are never
+overwritten. Exit codes: 0 success, 1 processing error, 2 argument error.
 
-For a small repeatable demonstration without RAW files:
+For an independent small demonstration without RAW files:
 
 ```sh
 python3 scripts/generate-demo.py /tmp/pixelshift-demo
 cargo run --locked -p pixelshift-cli -- merge --fixtures --job /tmp/pixelshift-demo/job.json
 ```
 
-`--fixtures` explicitly enables synthetic JSON sensor inputs; it is never enabled
-by the Lightroom plugin. See the integration tests for its schema.
-
-## Lightroom Classic scaffold
-
-Add `lightroom/SonyPixelShift.lrplugin` in File → Plug-in Manager. Select one
-complete a7CR capture, then Library → Plug-in Extras → Merge Sony a7CR Pixel Shift.
-For a normal burst use the separate denoise menu. On first use choose the compiled
-engine executable; choose a new TIFF destination. The plugin invokes the engine
-on original ARWs and imports the TIFF only after successful completion.
-
-The plugin uses asynchronous SDK tasks, validates offline originals, writes a
-temporary versioned job, quotes process arguments and imports under catalog write
-access. ExifTool must be visible in Lightroom's process environment (GUI PATH may
-differ from a terminal). macOS/Windows host execution and catalog import are
-**not yet tested here**. Cancellation during a running engine process, progress
-polling, job logging and a plugin settings panel remain planned. Failed import
-leaves the completed TIFF available to import manually.
+`--fixtures` explicitly enables synthetic JSON sensor inputs; the Lightroom
+plugin never enables it. See integration tests for the schema.
 
 ## Implemented and next
 
 - `pixelshift-core`: camera profile seam, Bayer sample reconstruction, 4-shot full
   color, 16-shot half-pixel interleaving, sensor-domain averaging, integer residual
   translation search and local reference fallback.
-- `pixelshift-io`: pinned rawler ARW decoder, ExifTool capture validation,
+- `pixelshift-io`: pinned rawler ARW decoder, native capture metadata validation,
   normalized black/white levels, single D65 color rendering, ICC-tagged RGB16 TIFF,
   temporary-file publication with no overwrite. RAW decoder and output writer
   traits are extension boundaries.
 - `pixelshift-cli`: strict versioned jobs, explicit synthetic input mode and
   structured results. The a7CR is the only registered camera.
-- Lua: selection → job → process → TIFF import scaffold with protocol checks.
+- Lua: bundled-engine discovery, version checks, selection → job → process → TIFF
+  import, persistent diagnostics and mocked SDK workflow checks.
 
 Next: real a7CR validation, tiled processing / memory budgets, subpixel alignment
 and spatial motion masks, then **linear DNG** with camera calibration and source

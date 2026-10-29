@@ -25,3 +25,17 @@ The generated sRGB ICC asset was created with Pillow's LittleCMS binding; it is
 a standard matrix/TRC profile, not a copied vendor profile. Regenerate with
 `ImageCms.ImageCmsProfile(ImageCms.createProfile('sRGB')).tobytes()` if needed.
 Dependency and distribution license/notice packaging is a release requirement.
+
+## Installable alpha metadata decision
+
+The package uses rawler's existing native Rust TIFF/EXIF implementation, with a
+small Sony MakerNote adapter, rather than installing another generic EXIF parser
+or executing ExifTool. ExifTool remains a development reference for Sony tag
+semantics. Its [Sony tag definitions](https://github.com/exiftool/exiftool/blob/master/lib/Image/ExifTool/Sony.pm)
+identify top-level MakerNote `0xb04a` as SequenceNumber and `0x202f` as the
+six-byte PixelShiftInfo record (group ID, shot number, shot count).
+
+This avoids a Perl/runtime dependency in the Lightroom distribution. It is a
+camera-specific metadata subset, not a replacement for ExifTool's broad format
+coverage. Synthetic TIFF/MakerNote tests establish parsing behavior; real a7CR
+captures still need comparison against ExifTool and Sony Imaging Edge.

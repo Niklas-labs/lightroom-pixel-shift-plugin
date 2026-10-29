@@ -19,7 +19,7 @@ function M.quote(path, windows)
     if windows then
         -- cmd.exe expansion is not made safe by double quotes. Reject expansion
         -- and control characters; paths with spaces and Unicode remain allowed.
-        assert(not path:find('[%%!%^&|<>"()]'), 'Unsupported Windows command path character')
+        assert(not path:find('[%%!%^"]'), 'Windows command paths cannot contain percent, exclamation, caret or quote characters')
         return '"' .. path .. '"'
     end
     return "'" .. path:gsub("'", "'\\''") .. "'"

@@ -69,3 +69,87 @@ fn rejects_duplicates_and_unknown_job_versions() {
         assert!(!dir.path().join("result.tif").exists());
     }
 }
+
+#[test]
+fn handshake_and_persistent_failure_diagnostics() {
+    let dir = tempfile::tempdir().unwrap();
+    let info = dir.path().join("engine info.json");
+    let out = Command::new(env!("CARGO_BIN_EXE_sony-pixelshift"))
+        .arg("info")
+        .arg("--output")
+        .arg(&info)
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let data: serde_json::Value = serde_json::from_slice(&fs::read(&info).unwrap()).unwrap();
+    assert_eq!(data["protocol_version"], 1);
+    assert_eq!(data["camera_models"][0], "ILCE-7CR");
+    assert_eq!(data["output_formats"][0], "tiff");
+    let result = dir.path().join("failure.json");
+    let log = dir.path().join("failure.log");
+    let out = Command::new(env!("CARGO_BIN_EXE_sony-pixelshift"))
+        .args(["merge", "--job"])
+        .arg(dir.path().join("missing-job.json"))
+        .arg("--result")
+        .arg(&result)
+        .arg("--log")
+        .arg(&log)
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    let data: serde_json::Value = serde_json::from_slice(&fs::read(&result).unwrap()).unwrap();
+    assert_eq!(data["status"], "error");
+    assert!(data["message"].as_str().unwrap().contains("opening job"));
+    assert!(fs::read_to_string(log).unwrap().contains("opening job"));
+}
+#[test]
+fn successful_result_file_matches_stdout() {
+    let (dir, job) = setup("four");
+    let result = dir.path().join("success.json");
+    let log = dir.path().join("success.log");
+    fs::write(&log, "Lightroom plugin log header\n").unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_sony-pixelshift"))
+        .args(["merge", "--fixtures", "--job"])
+        .arg(&job)
+        .arg("--result")
+        .arg(&result)
+        .arg("--log")
+        .arg(&log)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let data: serde_json::Value = serde_json::from_slice(&fs::read(result).unwrap()).unwrap();
+    assert_eq!(
+        data,
+        serde_json::from_slice::<serde_json::Value>(&out.stdout).unwrap()
+    );
+    let log_text = fs::read_to_string(log).unwrap();
+    assert!(log_text.starts_with("Lightroom plugin log header\n"));
+    assert!(log_text.contains("complete in"));
+}
+
+#[test]
+fn denoise_accepts_bursts_without_pixel_shift_indices() {
+    let (dir, job) = setup("denoise");
+    for i in 1..=4 {
+        let path = dir.path().join(format!("sensor-{i}.json"));
+        let mut fixture: serde_json::Value =
+            serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        fixture["frame"]["sequence"] = json!(0);
+        fs::write(path, serde_json::to_vec(&fixture).unwrap()).unwrap();
+    }
+    let output = Command::new(env!("CARGO_BIN_EXE_sony-pixelshift"))
+        .args(["merge", "--fixtures", "--job"])
+        .arg(job)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}

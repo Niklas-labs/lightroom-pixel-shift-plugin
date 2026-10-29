@@ -6,3 +6,5 @@
 *.ARQ
 *.tif
 *.tiff
+/dist/
+__pycache__/

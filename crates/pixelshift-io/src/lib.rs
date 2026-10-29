@@ -6,22 +6,26 @@ use std::{
     fs::File,
     io::{BufWriter, Write},
     path::Path,
-    process::Command,
 };
 use tiff::encoder::{TiffEncoder, colortype};
 
-#[derive(Debug, PartialEq, Deserialize)]
-struct Capture {
+mod metadata;
+pub use metadata::{PixelShiftInfo, inspect_capture, metadata_backend};
+
+#[derive(Debug, PartialEq, Deserialize, Serialize)]
+pub struct Capture {
     #[serde(rename = "SequenceNumber")]
-    sequence: Option<usize>,
+    pub sequence: Option<usize>,
     #[serde(rename = "ISO")]
-    iso: Option<f64>,
+    pub iso: Option<f64>,
     #[serde(rename = "ExposureTime")]
-    exposure: Option<f64>,
+    pub exposure: Option<f64>,
     #[serde(rename = "FNumber")]
-    aperture: Option<f64>,
+    pub aperture: Option<f64>,
     #[serde(rename = "SerialNumber", default, deserialize_with = "serial_number")]
-    serial: Option<String>,
+    pub serial: Option<String>,
+    #[serde(default)]
+    pub pixel_shift: Option<PixelShiftInfo>,
 }
 fn serial_number<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
@@ -51,6 +55,9 @@ pub struct Decoded {
     signature: Option<Capture>,
 }
 impl Decoded {
+    pub fn capture_metadata(&self) -> Option<&Capture> {
+        self.signature.as_ref()
+    }
     pub fn from_sensor(frame: Frame, color: Color) -> Result<Self> {
         frame.validate()?;
         Ok(Self {
@@ -66,6 +73,8 @@ impl Decoded {
                     && a.exposure == b.exposure
                     && a.aperture == b.aperture
                     && a.serial == b.serial
+                    && a.pixel_shift.as_ref().map(|v| (v.group_id, v.shot_count))
+                        == b.pixel_shift.as_ref().map(|v| (v.group_id, v.shot_count))
             }
             (None, None) => self.color == other.color,
             _ => false,
@@ -94,35 +103,11 @@ pub fn decode(path: &Path, fixture: bool) -> Result<Decoded> {
             .is_some_and(|x| x.eq_ignore_ascii_case("arw")),
         "only ARW input is supported (fixtures require --fixtures)"
     );
-    let output = Command::new("exiftool")
-        .args([
-            "-json",
-            "-n",
-            "-SequenceNumber",
-            "-ISO",
-            "-ExposureTime",
-            "-FNumber",
-            "-SerialNumber",
-            "--",
-        ])
-        .arg(path)
-        .output()
-        .context("ExifTool is required to validate Sony shot order and exposure")?;
-    ensure!(
-        output.status.success(),
-        "ExifTool failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let mut captures: Vec<Capture> = serde_json::from_slice(&output.stdout)?;
-    ensure!(captures.len() == 1, "expected one metadata record");
-    let capture = captures.remove(0);
-    ensure!(
-        capture.iso.is_some() && capture.exposure.is_some() && capture.aperture.is_some(),
-        "missing exposure metadata"
-    );
-    let sequence = capture
-        .sequence
-        .context("missing Sony SequenceNumber; input must be a complete capture sequence")?;
+    let capture = inspect_capture(path)
+        .with_context(|| format!("reading native EXIF from {}", path.display()))?;
+    // A missing sequence is retained as zero for ordinary burst denoise. Pixel
+    // Shift processing still requires a complete ordered 1..N sequence.
+    let sequence = capture.sequence.unwrap_or(0);
     let raw = rawler::decode_file(path).with_context(|| format!("decoding {}", path.display()))?;
     ensure!(
         raw.cpp == 1 && raw.model == "ILCE-7CR",
