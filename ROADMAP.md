@@ -15,6 +15,8 @@ are complete only when their acceptance criteria have been verified.
   including checksums, dependency notices and installation instructions.
 - [x] Native package smoke tests on Apple Silicon, Intel and Windows, including
   metadata inspection, merge, no-overwrite and launcher protocol checks.
+- [x] Automatic camera/mode detection for the registered a7CR profile, with
+  metadata preflight of count, group, shot indices, dimensions and exposure.
 - [x] Optimized release builds with thin LTO and Rayon-parallel reconstruction.
 
 These checks do not establish real-camera image quality or Lightroom SDK host
@@ -43,9 +45,9 @@ Confirm the interpretation from decoded metadata before choosing a reconstructio
 layout. Four ARWs of the same size can also be an ordinary burst; sixteen selected
 files can be incomplete parts of different captures.
 
-- [ ] Inspect the actual RAW container and make/model, rather than identifying a
+- [x] Inspect the actual RAW container and make/model, rather than identifying a
   camera solely from `.arw` or trusting a renamed extension.
-- [ ] Read declared Pixel Shift shot count, source-shot index and group identity;
+- [x] Read declared Pixel Shift shot count, source-shot index and group identity;
   derive four-shot/sixteen-shot mode and order from those records. Check that the
   selection is exactly one complete compatible capture. Keep ordinary burst
   denoise an explicit intent rather than automatically converting a failed Pixel

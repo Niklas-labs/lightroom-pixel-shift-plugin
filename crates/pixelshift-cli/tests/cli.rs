@@ -153,3 +153,36 @@ fn denoise_accepts_bursts_without_pixel_shift_indices() {
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+#[test]
+fn auto_and_omitted_configuration_detect_both_supported_counts() {
+    for mode in ["four", "sixteen"] {
+        for omit in [true, false] {
+            let (dir, job) = setup(mode);
+            let mut spec: serde_json::Value =
+                serde_json::from_slice(&fs::read(&job).unwrap()).unwrap();
+            if omit {
+                spec.as_object_mut().unwrap().remove("camera");
+                spec.as_object_mut().unwrap().remove("mode");
+            } else {
+                spec["camera"] = json!("auto");
+                spec["mode"] = json!("auto");
+            }
+            fs::write(&job, serde_json::to_vec(&spec).unwrap()).unwrap();
+            let run = Command::new(env!("CARGO_BIN_EXE_sony-pixelshift"))
+                .args(["merge", "--fixtures", "--job"])
+                .arg(job)
+                .output()
+                .unwrap();
+            assert!(
+                run.status.success(),
+                "{}",
+                String::from_utf8_lossy(&run.stderr)
+            );
+            let result: serde_json::Value = serde_json::from_slice(&run.stdout).unwrap();
+            assert_eq!(result["detected"]["camera"], "ILCE-7CR");
+            assert_eq!(result["detected"]["mode"], mode);
+            assert!(dir.path().join("result.tif").exists());
+        }
+    }
+}

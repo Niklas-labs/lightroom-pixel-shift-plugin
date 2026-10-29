@@ -14,6 +14,10 @@ pub use metadata::{PixelShiftInfo, inspect_capture, metadata_backend};
 
 #[derive(Debug, PartialEq, Deserialize, Serialize)]
 pub struct Capture {
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub dimensions: Option<(usize, usize)>,
     #[serde(rename = "SequenceNumber")]
     pub sequence: Option<usize>,
     #[serde(rename = "ISO")]

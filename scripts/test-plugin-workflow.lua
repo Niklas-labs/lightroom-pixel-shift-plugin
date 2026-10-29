@@ -62,13 +62,13 @@ local ok, problem = pcall(function()
                     if command:find("'info'",1,true) then
                         local path=assert(command:match("'%-?%-output' '([^']+)'"))
                         write(path, '{"protocol_version":1,"engine_version":"' ..
-                            (scenario == 'bad-handshake' and '9.0' or '0.1.0') .. '","camera_models":["ILCE-7CR"]}')
+                            (scenario == 'bad-handshake' and '9.0' or '0.1.0') .. '","camera_models":["ILCE-7CR"],"autodetection":true}')
                         return 0
                     end
                     state.job=assert(command:match("'%-%-job' '([^']+)'"))
                     state.result=assert(command:match("'%-%-result' '([^']+)'"))
                     state.log=assert(command:match("'%-%-log' '([^']+)'"))
-                    local job=Json.decode(read(state.job)); assert(job.inputs[1] == base .. '/photo-1.ARW')
+                    local job=Json.decode(read(state.job)); assert(job.mode == 'auto' and job.camera == 'auto'); assert(job.inputs[1] == base .. '/photo-1.ARW')
                     write(state.log, 'mock engine diagnostics')
                     if scenario == 'engine-failure' then
                         write(state.result, '{"version":1,"status":"error","message":"test capture rejected"}')

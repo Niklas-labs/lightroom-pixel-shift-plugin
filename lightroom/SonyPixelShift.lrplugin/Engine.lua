@@ -28,6 +28,7 @@ function M.checkInfo(info, manifest)
     local supported = false
     for _, model in ipairs(info.camera_models or {}) do if model == 'ILCE-7CR' then supported = true end end
     assert(supported, 'The engine does not support Sony a7CR.')
+    assert(info.autodetection == true, 'This engine does not support automatic capture detection. Reinstall the complete current plugin package.')
 end
 function M.command(executable, args, windows)
     local parts = { Protocol.quote(executable, windows) }

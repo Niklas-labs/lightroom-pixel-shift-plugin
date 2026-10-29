@@ -100,6 +100,18 @@ fn read_capture<R: Read + Seek>(reader: &mut R) -> Result<Capture> {
         make.trim().eq_ignore_ascii_case("SONY"),
         "native capture metadata supports Sony ARW only"
     );
+    let model = root
+        .get_entry(0x0110u16)
+        .and_then(|e| e.value.as_string())
+        .map(|s| s.trim().to_owned());
+    let dimensions = root
+        .find_ifds_with_tag(0x0100u16)
+        .into_iter()
+        .filter_map(|ifd| match (number(ifd, 0x0100), number(ifd, 0x0101)) {
+            (Ok(Some(w)), Ok(Some(h))) if w > 0.0 && h > 0.0 => Some((w as usize, h as usize)),
+            _ => None,
+        })
+        .max_by_key(|(w, h)| w.saturating_mul(*h));
     let exif = root
         .find_first_ifd_with_tag(0x829au16)
         .context("missing exposure EXIF IFD")?;
@@ -146,6 +158,8 @@ fn read_capture<R: Read + Seek>(reader: &mut R) -> Result<Capture> {
         bail!("missing Sony MakerNote")
     };
     Ok(Capture {
+        model,
+        dimensions,
         sequence,
         iso: Some(iso),
         exposure: Some(exposure),
@@ -162,7 +176,7 @@ mod tests {
     // A real TIFF hierarchy with absolute-offset Sony MakerNotes, in either byte
     // order. It exercises rawler's library parser, not a mock Capture record.
     fn fixture(big: bool, shift: [u8; 6], sequence: u16) -> Vec<u8> {
-        let mut b = vec![0u8; 256];
+        let mut b = vec![0u8; 400];
         fn short(b: &mut [u8], p: usize, v: u16, big: bool) {
             b[p..p + 2].copy_from_slice(&if big {
                 v.to_be_bytes()
@@ -189,10 +203,14 @@ mod tests {
         }
         b[..2].copy_from_slice(if big { b"MM" } else { b"II" });
         short(&mut b, 2, 42, big);
-        long(&mut b, 4, 8, big);
-        short(&mut b, 8, 2, big);
-        entry(&mut b, 10, 0x010f, 2, 5, 40, big);
-        entry(&mut b, 22, 0x8769, 4, 1, 64, big);
+        long(&mut b, 4, 272, big);
+        short(&mut b, 272, 5, big);
+        entry(&mut b, 274, 0x0100, 4, 1, 9504, big);
+        entry(&mut b, 286, 0x0101, 4, 1, 6336, big);
+        entry(&mut b, 298, 0x010f, 2, 5, 40, big);
+        entry(&mut b, 310, 0x0110, 2, 9, 256, big);
+        entry(&mut b, 322, 0x8769, 4, 1, 64, big);
+        b[256..265].copy_from_slice(b"ILCE-7CR\0");
         b[40..45].copy_from_slice(b"SONY\0");
         short(&mut b, 64, 5, big);
         entry(&mut b, 66, 0x829a, 5, 1, 144, big);
@@ -226,6 +244,8 @@ mod tests {
             shift[5] = 16;
             let capture = read_capture(&mut Cursor::new(fixture(big, shift, 10))).unwrap();
             assert_eq!(capture.sequence, Some(3));
+            assert_eq!(capture.model.as_deref(), Some("ILCE-7CR"));
+            assert_eq!(capture.dimensions, Some((9504, 6336)));
             assert_eq!(capture.iso, Some(100.));
             assert_eq!(capture.exposure, Some(0.01));
             assert_eq!(capture.aperture, Some(8.));

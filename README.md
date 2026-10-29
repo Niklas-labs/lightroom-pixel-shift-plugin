@@ -47,14 +47,19 @@ Example `job.json` (paths resolve against its directory):
 ```json
 {
   "version": 1,
-  "camera": "ILCE-7CR",
-  "mode": "four",
+  "camera": "auto",
+  "mode": "auto",
   "inputs": ["DSC00001.ARW", "DSC00002.ARW", "DSC00003.ARW", "DSC00004.ARW"],
   "output": "merged.tif",
   "motion_threshold": 0.08,
   "alignment_radius": 2
 }
 ```
+
+Camera and mode may be omitted or set to `auto`. The engine validates one complete
+4/16-shot a7CR capture from native RAW headers before decoding sensor data. Other
+Sony models remain unsupported. Explicit camera/mode values are checked against
+metadata. Ordinary bursts require explicit `denoise`; they are never a fallback.
 
 Use `sixteen` with sixteen files for twice the sensor width and height before
 cropping. `denoise` uses 2–64 RAW burst files. Pixel Shift ordering comes from

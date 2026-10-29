@@ -10,7 +10,7 @@ end
 function M.job(paths, output, mode)
     local inputs = {}
     for i, path in ipairs(paths) do inputs[i] = M.jsonString(path) end
-    return '{"version":1,"camera":"ILCE-7CR","mode":' .. M.jsonString(mode)
+    return '{"version":1,"camera":"auto","mode":' .. M.jsonString(mode)
         .. ',"inputs":[' .. table.concat(inputs, ',') .. '],"output":'
         .. M.jsonString(output) .. ',"motion_threshold":0.08,"alignment_radius":2}'
 end

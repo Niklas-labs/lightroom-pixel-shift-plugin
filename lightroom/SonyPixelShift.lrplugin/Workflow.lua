@@ -50,7 +50,7 @@ function M.start(denoise)
                 resultPath = jobPath .. '.result.json'
                 infoPath = jobPath .. '.engine.json'
                 logPath = LrFileUtils.chooseUniqueFileName(output .. '.pixelshift.log')
-                local mode = denoise and 'denoise' or (count == 4 and 'four' or 'sixteen')
+                local mode = denoise and 'denoise' or 'auto'
                 write(jobPath, Protocol.job(paths, output, mode))
                 write(logPath, 'Sony Pixel Shift Lightroom plugin ' .. Engine.version .. '\n')
                 local status = LrTasks.execute(Engine.command(executable, { 'info', '--output', infoPath }, WIN_ENV))

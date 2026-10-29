@@ -11,6 +11,8 @@ use std::{
     time::Instant,
 };
 
+mod detection;
+
 const PROTOCOL_VERSION: u32 = 1;
 #[derive(Parser)]
 #[command(
@@ -55,8 +57,10 @@ enum Commands {
 #[serde(deny_unknown_fields)]
 struct Job {
     version: u32,
-    camera: String,
-    mode: Mode,
+    #[serde(default)]
+    camera: Option<String>,
+    #[serde(default)]
+    mode: Option<String>,
     inputs: Vec<PathBuf>,
     output: PathBuf,
     #[serde(default = "threshold")]
@@ -112,6 +116,7 @@ fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
             "metadata_backend": pixelshift_io::metadata_backend(),
             "output_formats": ["tiff"],
             "experimental": true,
+            "autodetection": true,
         })),
         Commands::Inspect { input, .. } => Ok(json!({
             "version": PROTOCOL_VERSION, "status": "inspected",
@@ -143,36 +148,40 @@ fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
                 .context("invalid job JSON")?;
             ensure!(spec.version == PROTOCOL_VERSION, "unsupported job version");
             let profile = SonyA7Cr;
-            ensure!(
-                spec.camera == profile.model(),
-                "unregistered camera profile"
-            );
-            let required = match spec.mode {
-                Mode::Four => 4,
-                Mode::Sixteen => 16,
-                Mode::Denoise => spec.inputs.len(),
-            };
-            ensure!(
-                spec.inputs.len() == required && (2..=64).contains(&required),
-                "incorrect input count"
-            );
+            let mode = detection::mode(spec.mode.as_deref(), spec.inputs.len())?;
+            let required = spec.inputs.len();
             let base = job.parent().unwrap_or(Path::new("."));
             let output = resolve(base, &spec.output);
             ensure!(!output.exists(), "output already exists");
             let mut seen = std::collections::HashSet::new();
-            let mut decoded = Vec::new();
-            for (i, input) in spec.inputs.iter().enumerate() {
+            let mut paths = Vec::new();
+            for input in &spec.inputs {
                 let path = resolve(base, input)
                     .canonicalize()
                     .with_context(|| format!("input {}", input.display()))?;
                 ensure!(seen.insert(path.clone()), "duplicate input file");
+                paths.push(path);
+            }
+            let camera = if *fixtures {
+                spec.camera
+                    .as_deref()
+                    .filter(|c| *c != "auto")
+                    .unwrap_or(profile.model())
+                    .to_owned()
+            } else {
+                detection::preflight(&mut paths, mode, spec.camera.as_deref())?
+            };
+            ensure!(camera == profile.model(), "unregistered camera profile");
+            diagnostics.record(format!("detected {camera}, {mode:?}, {required} sources"))?;
+            let mut decoded = Vec::new();
+            for (i, path) in paths.iter().enumerate() {
                 diagnostics.record(format!("decode {}/{}: {}", i + 1, required, path.display()))?;
                 let frame = if *fixtures {
-                    pixelshift_io::decode(&path, true)?
+                    pixelshift_io::decode(path, true)?
                 } else {
-                    pixelshift_io::SonyArwDecoder.decode(&path)?
+                    pixelshift_io::SonyArwDecoder.decode(path)?
                 };
-                if spec.mode != Mode::Denoise && !fixtures {
+                if mode != Mode::Denoise && !fixtures {
                     let capture = frame
                         .capture_metadata()
                         .context("missing capture metadata")?;
@@ -194,7 +203,7 @@ fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
                 decoded.push(frame);
             }
             decoded.sort_by_key(|d| d.frame.sequence);
-            if spec.mode == Mode::Denoise {
+            if mode == Mode::Denoise {
                 // Burst indices may start anywhere or be absent. Pixel Shift
                 // modes retain strict source-shot completeness validation.
                 for (index, decoded) in decoded.iter_mut().enumerate() {
@@ -208,7 +217,7 @@ fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
                 &frames,
                 &profile,
                 &Options {
-                    mode: spec.mode,
+                    mode,
                     motion_threshold: spec.motion_threshold,
                     alignment_radius: spec.alignment_radius,
                 },
@@ -221,7 +230,7 @@ fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
                 report.fallback_pixels
             ))?;
             Ok(
-                json!({"version":PROTOCOL_VERSION,"status":"complete","output":output,"report":report}),
+                json!({"version":PROTOCOL_VERSION,"status":"complete","output":output,"report":report,"detected":{"camera":camera,"mode":mode,"source_count":required}}),
             )
         }
     }
