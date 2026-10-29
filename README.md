@@ -79,6 +79,9 @@ plugin never enables it. See integration tests for the schema.
 
 ## Implemented and next
 
+See [ROADMAP.md](ROADMAP.md) for prioritized follow-ups and acceptance criteria,
+including capture auto-detection, other Sony models, memory preferences and DNG.
+
 - `pixelshift-core`: camera profile seam, Bayer sample reconstruction, 4-shot full
   color, 16-shot half-pixel interleaving, sensor-domain averaging, integer residual
   translation search and local reference fallback.

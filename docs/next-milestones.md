@@ -1,5 +1,9 @@
 # Next milestones: distribution, linear DNG, and bounded-memory reconstruction
 
+This is the original detailed planning draft. [ROADMAP.md](../ROADMAP.md) is the
+current status and priority tracker; native metadata and CI packages described
+as future work below have since shipped in the installable alpha.
+
 Planning draft, 2026-10-29. These are proposed changes, not features already
 implemented. Scope remains Sony a7CR four-shot / sixteen-shot Pixel Shift and
 ordinary RAW burst denoise. Other camera profiles and formats retain extension
