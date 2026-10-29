@@ -1,0 +1,8 @@
+/target/
+/.cargo/
+/.rustup/
+/scratch/
+*.ARW
+*.ARQ
+*.tif
+*.tiff
