@@ -10,7 +10,7 @@ Synthetic tests cover direct 4-shot RGB reconstruction, high-frequency half-pixe
 16-shot detail (compared against an analytic scene at every output pixel),
 noise variance reduction, translation recovery, moving-patch reference fallback,
 invalid buffers/models/CFA/sequence/options, CLI ordering, TIFF decode/bit depth,
-ICC presence, duplicate paths, version rejection and no-clobber publication.
+ICC presence, source camera/lens/exposure EXIF roundtrips, duplicate paths, version rejection and no-clobber publication.
 Synthetic tests do not validate Sony decoder accuracy or real metadata.
 
 ## Required private capture corpus before claiming a7CR support is stable
@@ -57,11 +57,15 @@ variants still need comparison with ExifTool and Imaging Edge.
 ## Lightroom host gate
 
 Test current Lightroom Classic on macOS (Apple Silicon and Intel as available)
-and Windows. Verify SDK menu registration, first-use executable choice, GUI PATH
-for ExifTool, spaces/apostrophes/Unicode, Windows rejected command characters,
+and Windows. Verify SDK menu registration, bundled executable launch,
+spaces/apostrophes/Unicode, Windows rejected command characters,
 offline originals, existing output, failure exit, disk full, engine crash,
 concurrent jobs and catalog import failure. Ensure only completed TIFFs are
 imported, originals remain untouched, and temporary manifests are cleaned up.
+Verify deterministic input-range filenames beside the sources, collision suffixes,
+confirmation by catalog lookup after committing the write, result selection and
+filtered/collection-hidden results. Preserve existing filters and active sources;
+never claim import succeeded solely because the write callback ran.
 Lua protocol tests are not a substitute for running the Lightroom SDK host.
 
 ## DNG next
@@ -70,3 +74,8 @@ Require Adobe DNG validation, a second DNG reader, retained scene-linear values,
 correct camera matrices/WB, crop/orientation, previews and a successful Lightroom
 import/develop round trip. A `.dng` filename or TIFF container alone is not a
 valid DNG implementation.
+
+Record Adaptive Color/Adaptive B&W profile eligibility on linear DNG separately
+from adaptive presets, masking, AI Denoise and other Enhance operations. Require
+host evidence for each claimed feature. Check camera/lens recognition, RAW lens
+profile matching and built-in corrections after crop and sixteen-shot scaling.

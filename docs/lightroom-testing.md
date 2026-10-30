@@ -49,9 +49,14 @@ Developer ID signing and notarized distribution are tracked in ROADMAP.md.
 ## First merge
 
 Start with a complete **four-shot Sony a7CR Pixel Shift** capture. Select the
-original ARWs in the Library module, then use **Library → Plug-in Extras → Pixel Shift: more detail (4 or 16 RAWs)**. Choose a new TIFF destination. The plugin checks the
+original ARWs in the Library module, then use **Library → Plug-in Extras → Pixel Shift: more detail (4 or 16 RAWs)**. Confirm the proposed filename. The plugin saves beside the source ARWs
+(e.g. `DSC01582-DSC01585-PixelShift.tif`), adding a suffix if that name exists.
+Sources must be in one folder. The plugin checks the
 bundled engine version, passes original paths to it, and imports the TIFF only
-after successful completion.
+after successful completion. The completion dialog confirms the catalog lookup
+and attempts to select the result. If it is hidden, check library filters and the
+current collection; the plugin preserves both. A saved TIFF remains available if
+catalog import fails.
 
 Sixteen-shot captures are also available, but the current whole-image engine may
 use roughly 7–10 GB RAM. Do the first sixteen-shot test on a machine with enough
@@ -73,3 +78,20 @@ import manually if catalog import fails.
 Synthetic CI fixtures verify packaging, reconstruction and protocol behavior.
 They do not establish real-camera image quality or replace running inside
 Lightroom Classic. Please keep the source ARWs while testing.
+
+## TIFF appearance and Adobe features
+
+Check camera/lens/focal-length EXIF against the source. Standard EXIF is retained
+when present, but Lightroom's RAW-only lens profiles may still be unavailable for
+TIFF. Do not choose a different lens profile. Proprietary Sony correction data is
+not applied or copied into the cropped TIFF.
+
+Our simple sRGB renderer does not reproduce Adobe's RAW profile/tone curve or
+source Develop edits. Compare neutral chart patches with matched exposure and
+white balance before attributing a duller appearance to lens correction.
+
+Linear DNG is planned, not included. Test Adaptive Color and Adaptive B&W profiles,
+AI Denoise and other Enhance features separately on merged linear DNGs; record
+Lightroom version, availability and visual results. DNG alone does not guarantee
+eligibility. Adaptive presets and AI masks are distinct features and can already
+work on rendered files depending on the operation and Lightroom version.

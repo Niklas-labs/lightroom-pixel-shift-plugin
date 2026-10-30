@@ -9,6 +9,7 @@ local LrView = import 'LrView'
 local Protocol = require 'Protocol'
 local Engine = require 'Engine'
 local Labels = require 'Labels'
+local Output = require 'Output'
 local M = {}
 local function write(path, text)
     local file, problem = io.open(path, 'wb')
@@ -16,6 +17,10 @@ local function write(path, text)
     local ok, message = file:write(text)
     local closed, closeProblem = file:close()
     assert(ok and closed, message or closeProblem or 'Cannot write job file')
+end
+local function append(path, text)
+    local file = assert(io.open(path, 'ab'))
+    assert(file:write(text .. '\n')); assert(file:close())
 end
 function M.start(denoise)
     LrTasks.startAsyncTask(function()
@@ -43,6 +48,7 @@ function M.start(denoise)
                     manifest = Engine.readJson(LrPathUtils.child(_PLUGIN.path, 'manifest.json'))
                     Engine.checkManifest(manifest)
                 end
+                local output = Output.path(paths, denoise, LrPathUtils, LrFileUtils.chooseUniqueFileName)
                 local summary = Labels.summary(denoise, count)
                 local view = LrView.osFactory()
                 local choice = LrDialogs.presentModalDialog {
@@ -53,16 +59,14 @@ function M.start(denoise)
                         view:static_text { title = 'Result: ' .. summary.result },
                         view:static_text { title = 'Best for: ' .. summary.capture },
                         view:static_text { title = 'Output: 16-bit TIFF' },
+                        view:static_text { title = 'Save as: ' .. LrPathUtils.leafName(output) },
+                        view:static_text { title = 'Folder: Beside source photos' },
                         view:static_text { title = 'Camera: Auto-detected | Experimental' },
                     },
-                    actionVerb = 'Choose output', cancelVerb = 'Cancel',
+                    actionVerb = denoise and 'Reduce noise' or 'Merge', cancelVerb = 'Cancel',
                 }
                 if choice ~= 'ok' then return end
-                local output = LrDialogs.runSavePanel { title = summary.title .. ' | Save TIFF',
-                    requiredFileType = 'tif', initialDirectory = LrPathUtils.parent(paths[1]),
-                    initialFileName = denoise and 'Sony-Denoised.tif' or 'Sony-PixelShift.tif' }
-                if not output then return end
-                assert(not LrFileUtils.exists(output), 'Choose a new output filename.')
+                assert(not LrFileUtils.exists(output), 'Output already exists. Retry to choose a unique name.')
                 jobPath = LrFileUtils.chooseUniqueFileName(output .. '.pixelshift-job.json')
                 resultPath = jobPath .. '.result.json'
                 infoPath = jobPath .. '.engine.json'
@@ -90,14 +94,36 @@ function M.start(denoise)
                     (result and result.message) or ('Engine failed (exit ' .. tostring(status) .. ').'))
                 assert(result.output == output, 'The engine reported a different output path; import was stopped.')
                 assert(LrFileUtils.exists(output) == 'file', 'Engine did not produce the TIFF.')
-                local imported = false
-                catalog:withWriteAccessDo('Import Sony Pixel Shift TIFF', function()
-                    assert(catalog:addPhoto(output), 'Lightroom did not import the TIFF.')
-                    imported = true
+                local callbackRan = false
+                local existing = catalog:findPhotoByPath(output)
+                local writeStatus = catalog:withWriteAccessDo('Import Sony Pixel Shift TIFF', function()
+                    assert(existing or catalog:addPhoto(output), 'Lightroom did not import the TIFF.')
+                    callbackRan = true
                 end, { timeout = 30 })
-                assert(imported, 'The catalog was busy. The completed TIFF was saved and can be imported manually.')
+                append(logPath, 'Catalog write: ' .. tostring(writeStatus))
+                assert(callbackRan, 'Catalog busy. TIFF saved; import it manually: ' .. output)
+                -- Verify after the write gate commits, independently of library filters.
+                local imported
+                for attempt = 1,3 do
+                    imported = catalog:findPhotoByPath(output)
+                    if imported then break end
+                    if attempt < 3 then LrTasks.sleep(0.1) end
+                end
+                assert(imported, 'TIFF saved, but catalog import was not confirmed: ' .. output)
+                append(logPath, 'Catalog lookup: confirmed | ' .. output)
+                local selectOk, selectProblem = LrTasks.pcall(function()
+                    catalog:setSelectedPhotos(imported, {})
+                    LrTasks.yield()
+                end)
+                local selected = catalog:getTargetPhoto()
+                local visible = selectOk and selected and selected:getRawMetadata('path') == output
+                append(logPath, 'Selection: ' .. (visible and 'result selected' or 'not selected; check library filters/current source'))
+                if not selectOk then append(logPath, 'Selection detail: ' .. tostring(selectProblem)) end
                 succeeded = true
-                LrDialogs.message(summary.title, 'Result: ' .. summary.result .. '\nSaved: 16-bit TIFF\nAdded to: Lightroom\nStatus: Experimental\n\nDiagnostic log: ' .. logPath, 'info')
+                local visibility = visible and 'View: Result selected' or 'View: Check library filters or current collection'
+                LrDialogs.message(summary.title,
+                    'Saved: ' .. LrPathUtils.leafName(output) .. '\nCatalog: Confirmed\n' .. visibility ..
+                    '\nFolder: ' .. LrPathUtils.parent(output) .. '\n\nDiagnostic log: ' .. logPath, 'info')
             end)
         end)
         if infoPath then LrFileUtils.delete(infoPath) end

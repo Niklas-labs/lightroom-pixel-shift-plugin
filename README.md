@@ -20,10 +20,15 @@ in Privacy & Security. See [installation and testing](docs/lightroom-testing.md)
 and [CI packaging](docs/packaging.md).
 
 Select exactly four or sixteen original a7CR Pixel Shift ARWs, then choose
-**Library → Plug-in Extras → Pixel Shift: more detail (4 or 16 RAWs)** and a new TIFF output.
+**Library → Plug-in Extras → Pixel Shift: more detail (4 or 16 RAWs)**.
+The result is saved beside the sources, for example
+`DSC01582-DSC01585-PixelShift.tif`; existing files receive a unique suffix.
+Select sources from one folder. Burst results use `-NoiseReduced.tif`.
 The plugin checks its engine version, runs asynchronously and imports only a
-validated completed result. A separate menu handles RAW burst denoise. Failed
-jobs and diagnostic logs remain next to the chosen output for troubleshooting.
+validated completed result, confirms its catalog entry and attempts to select it
+without changing your library filters or current collection. A separate menu
+handles RAW burst denoise. Failed jobs and diagnostic logs remain beside the
+output for troubleshooting.
 
 Start with four shots; sixteen shots still use the original high-memory engine.
 DNG and tiled processing are not included in this first installable alpha.
@@ -123,7 +128,14 @@ overhead; use a 16 GB+ machine and expect a slow first implementation. It has no
 out-of-core path or production performance claim. TIFF is classic TIFF, RGB16
 with sRGB transfer and ICC profile; highlights are clipped, with no tone mapping.
 The crop excludes a border of `4 + alignment_radius` sensor pixels on every side.
-Orientation is preserved in a TIFF tag; broader metadata preservation is pending.
+Orientation and available standard camera/lens/exposure EXIF are preserved. GPS,
+serial numbers, private MakerNotes and source geometry tags are not copied.
+Lens identification does not unlock Adobe lens profiles restricted to RAW files;
+do not select an unrelated lens to compensate. Lens identity stored only in
+proprietary Sony tags still needs a resolver. The TIFF renderer does not apply
+Adobe camera profiles, tone curves, lens corrections or source Lightroom edits,
+so its appearance can differ from the ARWs. Linear DNG is the next output target;
+Adaptive profile and AI feature compatibility must be tested in Lightroom.
 
 Read [dependency evaluation](docs/dependencies.md), [architecture](docs/architecture.md)
 and [validation requirements](docs/validation.md) before calling a profile stable.

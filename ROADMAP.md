@@ -116,6 +116,21 @@ and performance. Retain fixed accumulation order where practical.
 
 ## 5. Make linear DNG the preferred Lightroom output
 
+Prioritize a small-image interoperability proof now, alongside tiled processing:
+real TIFF testing has exposed Adobe profile and RAW editing limitations.
+
+- [ ] Verify Adaptive Color/Adaptive B&W profiles on merged linear DNG in current
+  Lightroom Classic. Test AI Denoise, Raw Details, Super Resolution and adaptive
+  presets/masks separately; document availability by Lightroom version rather
+  than assuming all DNGs qualify for every RAW feature.
+- [ ] Preserve camera/lens/focal-length/exposure identity. Resolve Sony lens IDs
+  where standard EXIF lacks a lens name; do not guess ambiguous lenses.
+- [ ] Validate RAW lens-profile matching and Sony built-in corrections, including
+  distortion, vignetting and CA. Recompute correction coordinates for output crop
+  and sixteen-shot scale; never blindly copy source geometry/opcodes.
+- [ ] Compare merged DNG and source ARW under matched WB, exposure and Adobe
+  profile. Check neutral patches, chart colors, highlight recovery and tone.
+
 - [ ] Prove a streaming writer using rawler's lower-level TIFF/LJPEG facilities
   or an upstream extension. Its existing high-level RGB/DNG API requires a whole
   image and is not a solution to the memory requirement.

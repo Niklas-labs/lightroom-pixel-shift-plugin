@@ -16,6 +16,8 @@ pub use metadata::{PixelShiftInfo, inspect_capture, metadata_backend};
 #[derive(Debug, PartialEq, Deserialize, Serialize)]
 pub struct Capture {
     #[serde(default)]
+    pub photo_metadata: PhotoMetadata,
+    #[serde(default)]
     pub model: Option<String>,
     #[serde(default)]
     pub dimensions: Option<(usize, usize)>,
@@ -43,8 +45,25 @@ fn serial_number<'de, D: serde::Deserializer<'de>>(
         _ => Err(serde::de::Error::custom("invalid camera serial number")),
     }
 }
+/// Whitelisted source EXIF. Geometry-dependent RAW tags and private MakerNotes
+/// must not be copied into a cropped, rendered image.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct PhotoMetadata {
+    pub make: Option<String>,
+    pub model: Option<String>,
+    pub lens_make: Option<String>,
+    pub lens_model: Option<String>,
+    pub lens_spec: Option<[rawler::formats::tiff::Rational; 4]>,
+    pub focal_length: Option<rawler::formats::tiff::Rational>,
+    pub exposure_time: Option<rawler::formats::tiff::Rational>,
+    pub fnumber: Option<rawler::formats::tiff::Rational>,
+    pub iso: Option<u32>,
+    pub date_time_original: Option<String>,
+}
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Color {
+    #[serde(default)]
+    pub photo_metadata: PhotoMetadata,
     pub white_balance: [f32; 3],
     /// XYZ D65 to camera, row major.
     pub xyz_to_camera: [f32; 9],
@@ -150,6 +169,7 @@ pub fn decode(path: &Path, fixture: bool) -> Result<Decoded> {
         .context("missing D65 camera matrix")?;
     ensure!(matrix.len() == 9, "expected 3x3 camera matrix");
     let color = Color {
+        photo_metadata: capture.photo_metadata.clone(),
         orientation: raw.orientation.to_u16(),
         white_balance: [raw.wb_coeffs[0], raw.wb_coeffs[1], raw.wb_coeffs[2]],
         xyz_to_camera: matrix
@@ -274,8 +294,59 @@ pub fn write_tiff(path: &Path, image: &Image, color: &Color) -> Result<()> {
         let mut writer = BufWriter::new(temporary.as_file_mut());
         {
             let mut encoder = TiffEncoder::new(&mut writer)?;
+            let metadata = &color.photo_metadata;
+            let mut exif = encoder.extra_directory()?;
+            let rational =
+                |v: rawler::formats::tiff::Rational| tiff::encoder::Rational { n: v.n, d: v.d };
+            for (tag, value) in [
+                (0x829a, metadata.exposure_time),
+                (0x829d, metadata.fnumber),
+                (0x920a, metadata.focal_length),
+            ] {
+                if let Some(value) = value.filter(|v| v.d != 0) {
+                    exif.write_tag(tiff::tags::Tag::Unknown(tag), rational(value))?;
+                }
+            }
+            if let Some(values) = metadata
+                .lens_spec
+                .filter(|values| values.iter().all(|v| v.d != 0))
+            {
+                exif.write_tag(tiff::tags::Tag::Unknown(0xa432), &values.map(rational)[..])?;
+            }
+            for (tag, value) in [
+                (0xa433, &metadata.lens_make),
+                (0xa434, &metadata.lens_model),
+                (0x9003, &metadata.date_time_original),
+            ] {
+                if let Some(value) = value {
+                    exif.write_tag(tiff::tags::Tag::Unknown(tag), value.as_str())?;
+                }
+            }
+            if let Some(iso) = metadata.iso {
+                exif.write_tag(
+                    tiff::tags::Tag::Unknown(0x8827),
+                    iso.min(u16::MAX as u32) as u16,
+                )?;
+                if iso >= u16::MAX as u32 {
+                    exif.write_tag(tiff::tags::Tag::Unknown(0x8830), 3u16)?;
+                    exif.write_tag(tiff::tags::Tag::Unknown(0x8833), iso)?;
+                }
+            }
+            exif.write_tag(tiff::tags::Tag::Unknown(0xa001), 1u16)?; // sRGB
+            let exif_offset = exif.finish_with_offsets()?.offset;
             let mut output = encoder
                 .new_image::<colortype::RGB16>(image.width.try_into()?, image.height.try_into()?)?;
+            output
+                .encoder()
+                .write_tag(tiff::tags::Tag::ExifDirectory, exif_offset)?;
+            for (tag, value) in [
+                (tiff::tags::Tag::Make, &metadata.make),
+                (tiff::tags::Tag::Model, &metadata.model),
+            ] {
+                if let Some(value) = value {
+                    output.encoder().write_tag(tag, value.as_str())?;
+                }
+            }
             output
                 .encoder()
                 .write_tag(tiff::tags::Tag::Orientation, color.orientation)?;
@@ -325,6 +396,7 @@ mod tests {
     use super::*;
     fn calibration() -> Color {
         Color {
+            photo_metadata: PhotoMetadata::default(),
             white_balance: [1.0; 3],
             xyz_to_camera: [
                 0.82, -0.2976, -0.0719, -0.4296, 1.2053, 0.2532, -0.0429, 0.1282, 0.5774,
@@ -349,6 +421,78 @@ mod tests {
         write_tiff(&path, &image, &color).unwrap();
         let mut tiff = tiff::decoder::Decoder::new(File::open(path).unwrap()).unwrap();
         assert_eq!(tiff.get_tag_u32(tiff::tags::Tag::Orientation).unwrap(), 6);
+    }
+    #[test]
+    fn source_exif_survives_without_private_or_geometry_tags() {
+        use rawler::{
+            exif::Exif,
+            formats::tiff::{GenericTiffReader, Rational, reader::TiffReader},
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("metadata.tif");
+        let mut color = calibration();
+        color.photo_metadata = PhotoMetadata {
+            make: Some("SONY".into()),
+            model: Some("ILCE-7CR".into()),
+            lens_make: Some("Sony".into()),
+            lens_model: Some("FE 20-70mm F4 G".into()),
+            lens_spec: Some([
+                Rational::new(20, 1),
+                Rational::new(70, 1),
+                Rational::new(4, 1),
+                Rational::new(4, 1),
+            ]),
+            focal_length: Some(Rational::new(35, 1)),
+            exposure_time: Some(Rational::new(1, 100)),
+            fnumber: Some(Rational::new(8, 1)),
+            iso: Some(100),
+            date_time_original: Some("2026:10:29 12:00:00".into()),
+        };
+        write_tiff(
+            &path,
+            &Image {
+                width: 2,
+                height: 2,
+                rgb: vec![0.18; 12],
+            },
+            &color,
+        )
+        .unwrap();
+        let tiff =
+            GenericTiffReader::new(&mut File::open(path).unwrap(), 0, 0, Some(4), &[]).unwrap();
+        let root = tiff.root_ifd();
+        assert_eq!(
+            root.get_entry(0x010fu16)
+                .unwrap()
+                .value
+                .as_string()
+                .unwrap()
+                .trim(),
+            "SONY"
+        );
+        assert_eq!(
+            root.get_entry(0x0110u16)
+                .unwrap()
+                .value
+                .as_string()
+                .unwrap()
+                .trim(),
+            "ILCE-7CR"
+        );
+        let exif = Exif::new(root).unwrap();
+        let source = &color.photo_metadata;
+        assert_eq!(exif.lens_make, source.lens_make);
+        assert_eq!(exif.lens_model, source.lens_model);
+        assert_eq!(exif.lens_spec, source.lens_spec);
+        assert_eq!(exif.focal_length, source.focal_length);
+        assert_eq!(exif.exposure_time, source.exposure_time);
+        assert_eq!(exif.fnumber, source.fnumber);
+        assert_eq!(exif.iso_speed_ratings, Some(100));
+        assert_eq!(exif.date_time_original, source.date_time_original);
+        assert_eq!(exif.color_space, Some(1));
+        assert!(root.find_first_ifd_with_tag(0x927cu16).is_none()); // MakerNote
+        assert!(root.find_first_ifd_with_tag(0x8825u16).is_none()); // GPS
+        assert!(root.find_first_ifd_with_tag(0xa002u16).is_none()); // stale dimensions
     }
     #[test]
     fn rejects_invalid_render_data_and_dng_extension() {

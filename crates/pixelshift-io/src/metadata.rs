@@ -4,7 +4,7 @@
 //! unsigned-short SequenceNumber; 0x202f is six-byte PixelShiftInfo (group u32,
 //! shot u8, count u8). No subprocess or installed metadata utility is used.
 //! Reference: https://github.com/exiftool/exiftool/blob/master/lib/Image/ExifTool/Sony.pm
-use super::Capture;
+use super::{Capture, PhotoMetadata};
 use anyhow::{Context, Result, bail, ensure};
 use rawler::{
     bits::Endian,
@@ -197,7 +197,23 @@ fn read_capture<R: Read + Seek>(reader: &mut R) -> Result<Capture> {
     } else {
         bail!("missing Sony MakerNote")
     };
+    let standard = rawler::exif::Exif::new(root)?;
+    let photo_metadata = PhotoMetadata {
+        make: Some(make.trim().to_owned()),
+        model: model.clone(),
+        lens_make: standard.lens_make,
+        lens_model: standard.lens_model,
+        lens_spec: standard.lens_spec,
+        focal_length: standard.focal_length,
+        exposure_time: standard.exposure_time,
+        fnumber: standard.fnumber,
+        iso: standard
+            .iso_speed
+            .or(standard.iso_speed_ratings.map(u32::from)),
+        date_time_original: standard.date_time_original,
+    };
     Ok(Capture {
+        photo_metadata,
         model,
         dimensions,
         sequence,
@@ -216,7 +232,7 @@ mod tests {
     // A real TIFF hierarchy with absolute-offset Sony MakerNotes, in either byte
     // order. It exercises rawler's library parser, not a mock Capture record.
     fn fixture(big: bool, shift: [u8; 6], sequence: u16) -> Vec<u8> {
-        let mut b = vec![0u8; 400];
+        let mut b = vec![0u8; 800];
         fn short(b: &mut [u8], p: usize, v: u16, big: bool) {
             b[p..p + 2].copy_from_slice(&if big {
                 v.to_be_bytes()
@@ -268,6 +284,18 @@ mod tests {
         entry(&mut b, 206, 0x202f, 7, 6, 240, big);
         entry(&mut b, 218, 0xb04a, 3, 1, u32::from(sequence), big);
         b[240..246].copy_from_slice(&shift);
+        // Standard EXIF alongside Sony MakerNotes; preserve lens identity without
+        // copying the private MakerNote into a rendered output.
+        b.copy_within(64..126, 400);
+        long(&mut b, 330, 400, big);
+        short(&mut b, 400, 8, big);
+        entry(&mut b, 462, 0xa433, 2, 5, 600, big);
+        entry(&mut b, 474, 0xa434, 2, 14, 620, big);
+        entry(&mut b, 486, 0x920a, 5, 1, 660, big);
+        b[600..605].copy_from_slice(b"Sony\0");
+        b[620..634].copy_from_slice(b"FE 20-70mm F4\0");
+        long(&mut b, 660, 35, big);
+        long(&mut b, 664, 1, big);
         b
     }
     #[test]
@@ -286,6 +314,13 @@ mod tests {
             assert_eq!(capture.sequence, Some(3));
             assert_eq!(capture.model.as_deref(), Some("ILCE-7CR"));
             assert_eq!(capture.dimensions, Some((9504, 6336)));
+            assert_eq!(capture.photo_metadata.make.as_deref(), Some("SONY"));
+            assert_eq!(capture.photo_metadata.lens_make.as_deref(), Some("Sony"));
+            assert_eq!(
+                capture.photo_metadata.lens_model.as_deref(),
+                Some("FE 20-70mm F4")
+            );
+            assert_eq!(capture.photo_metadata.focal_length.unwrap().n, 35);
             assert_eq!(capture.iso, Some(100.));
             assert_eq!(capture.exposure, Some(0.01));
             assert_eq!(capture.aperture, Some(8.));
@@ -297,7 +332,7 @@ mod tests {
         let mut bytes = fixture(big, shift, 3);
         // Copy the IFD entry table, not the out-of-line value payload.
         bytes.copy_within(204..234, 192);
-        bytes[106..110].copy_from_slice(&if big {
+        bytes[442..446].copy_from_slice(&if big {
             42u32.to_be_bytes()
         } else {
             42u32.to_le_bytes()
