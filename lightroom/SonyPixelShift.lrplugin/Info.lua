@@ -4,8 +4,8 @@ return {
     LrToolkitIdentifier = 'org.sonypixelshift.lightroom',
     LrPluginName = 'Sony Pixel Shift (Experimental)',
     LrLibraryMenuItems = {
-        { title = 'Merge Sony a7CR Pixel Shift', file = 'Merge.lua' },
-        { title = 'Denoise Sony a7CR RAW burst', file = 'Denoise.lua' },
+        { title = 'Pixel Shift: more detail (4 or 16 RAWs)', file = 'Merge.lua' },
+        { title = 'Reduce noise: ordinary RAW burst', file = 'Denoise.lua' },
     },
     VERSION = { major = 0, minor = 1, revision = 0, build = 1 },
 }

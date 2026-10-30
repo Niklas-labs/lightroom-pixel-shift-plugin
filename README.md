@@ -20,7 +20,7 @@ in Privacy & Security. See [installation and testing](docs/lightroom-testing.md)
 and [CI packaging](docs/packaging.md).
 
 Select exactly four or sixteen original a7CR Pixel Shift ARWs, then choose
-**Library → Plug-in Extras → Merge Sony a7CR Pixel Shift** and a new TIFF output.
+**Library → Plug-in Extras → Pixel Shift: more detail (4 or 16 RAWs)** and a new TIFF output.
 The plugin checks its engine version, runs asynchronously and imports only a
 validated completed result. A separate menu handles RAW burst denoise. Failed
 jobs and diagnostic logs remain next to the chosen output for troubleshooting.

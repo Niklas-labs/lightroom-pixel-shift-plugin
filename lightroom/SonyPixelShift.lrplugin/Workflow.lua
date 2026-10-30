@@ -5,8 +5,10 @@ local LrFunctionContext = import 'LrFunctionContext'
 local LrPathUtils = import 'LrPathUtils'
 local LrTasks = import 'LrTasks'
 local LrPrefs = import 'LrPrefs'
+local LrView = import 'LrView'
 local Protocol = require 'Protocol'
 local Engine = require 'Engine'
+local Labels = require 'Labels'
 local M = {}
 local function write(path, text)
     local file, problem = io.open(path, 'wb')
@@ -26,7 +28,7 @@ function M.start(denoise)
                 local count = #photos
                 assert((denoise and count >= 2 and count <= 64) or
                     (not denoise and (count == 4 or count == 16)),
-                    'Select exactly 4 or 16 Pixel Shift ARWs, or 2–64 RAWs for denoise.')
+                    denoise and 'Select 2–64 RAW photos of the same scene.' or 'Select 4 or 16 RAW photos taken in camera Pixel Shift mode.')
                 local paths = {}
                 for i, photo in ipairs(photos) do
                     paths[i] = photo:getRawMetadata('path')
@@ -41,7 +43,22 @@ function M.start(denoise)
                     manifest = Engine.readJson(LrPathUtils.child(_PLUGIN.path, 'manifest.json'))
                     Engine.checkManifest(manifest)
                 end
-                local output = LrDialogs.runSavePanel { title = 'Save merged 16-bit TIFF',
+                local summary = Labels.summary(denoise, count)
+                local view = LrView.osFactory()
+                local choice = LrDialogs.presentModalDialog {
+                    title = summary.title,
+                    contents = view:column {
+                        spacing = view:control_spacing(),
+                        view:static_text { title = 'Input: ' .. summary.input },
+                        view:static_text { title = 'Result: ' .. summary.result },
+                        view:static_text { title = 'Best for: ' .. summary.capture },
+                        view:static_text { title = 'Output: 16-bit TIFF' },
+                        view:static_text { title = 'Camera: Sony a7CR | Experimental' },
+                    },
+                    actionVerb = 'Choose output', cancelVerb = 'Cancel',
+                }
+                if choice ~= 'ok' then return end
+                local output = LrDialogs.runSavePanel { title = summary.title .. ' | Save TIFF',
                     requiredFileType = 'tif', initialDirectory = LrPathUtils.parent(paths[1]),
                     initialFileName = denoise and 'Sony-Denoised.tif' or 'Sony-PixelShift.tif' }
                 if not output then return end
@@ -71,8 +88,7 @@ function M.start(denoise)
                 end, { timeout = 30 })
                 assert(imported, 'The catalog was busy. The completed TIFF was saved and can be imported manually.')
                 succeeded = true
-                LrDialogs.message('Sony Pixel Shift', 'TIFF created and imported.\n\nDiagnostic log: ' .. logPath ..
-                    '\n\nCamera profile and motion correction are experimental.', 'info')
+                LrDialogs.message(summary.title, 'Result: ' .. summary.result .. '\nSaved: 16-bit TIFF\nAdded to: Lightroom\nStatus: Experimental\n\nDiagnostic log: ' .. logPath, 'info')
             end)
         end)
         if infoPath then LrFileUtils.delete(infoPath) end

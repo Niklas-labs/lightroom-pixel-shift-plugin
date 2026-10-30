@@ -21,14 +21,16 @@ end
 local ok, problem = pcall(function()
     write(base .. '/plugin/bin/sony-pixelshift', 'mock executable')
     write(base .. '/plugin/manifest.json', '{"protocol_version":1,"engine_version":"0.1.0"}')
-    for i=1,4 do write(base .. '/photo-' .. i .. '.ARW', 'mock raw') end
-    for _, scenario in ipairs({'success', 'cancel', 'engine-failure', 'bad-handshake', 'import-failure', 'catalog-timeout', 'wrong-output'}) do
+    for i=1,16 do write(base .. '/photo-' .. i .. '.ARW', 'mock raw') end
+    for _, scenario in ipairs({'success', 'sixteen', 'denoise', 'options-cancel', 'cancel', 'engine-failure', 'bad-handshake', 'import-failure', 'catalog-timeout', 'wrong-output'}) do
         local state = {imports={},dialogs={},commands={}}
+        local denoise = scenario == 'denoise'
+        local count = scenario == 'sixteen' and 16 or 4
         local output = base .. '/' .. scenario .. ' Output.tif'
         local catalog = {}
         function catalog:getTargetPhotos()
             local photos = {}
-            for i=1,4 do
+            for i=1,count do
                 local path = base .. '/photo-' .. i .. '.ARW'
                 photos[i] = {getRawMetadata=function(_, key) assert(key == 'path'); return path end}
             end
@@ -48,7 +50,12 @@ local ok, problem = pcall(function()
         end
         local sdk = {
             LrApplication={activeCatalog=function() return catalog end},
-            LrDialogs={runSavePanel=function() if scenario ~= 'cancel' then return output end end,
+            LrView={osFactory=function() return {control_spacing=function() return 8 end,static_text=function(_, t) return t end,column=function(_, t) return t end} end},
+            LrDialogs={presentModalDialog=function(options)
+                state.options = options
+                assert(options.contents[2].title:find(denoise and 'Less noise' or (count == 16 and 'Higher resolution' or 'Better color detail'), 1, true))
+                return scenario == 'options-cancel' and 'cancel' or 'ok'
+            end,runSavePanel=function() if scenario ~= 'cancel' then return output end end,
                 message=function(title,message,severity) state.dialogs[#state.dialogs+1]={title=title,message=message,severity=severity} end},
             LrFileUtils={exists=exists,chooseUniqueFileName=function(path) assert(not exists(path)); return path end,
                 delete=function(path) os.remove(path) end},
@@ -68,7 +75,7 @@ local ok, problem = pcall(function()
                     state.job=assert(command:match("'%-%-job' '([^']+)'"))
                     state.result=assert(command:match("'%-%-result' '([^']+)'"))
                     state.log=assert(command:match("'%-%-log' '([^']+)'"))
-                    local job=Json.decode(read(state.job)); assert(job.mode == 'auto' and job.camera == 'auto'); assert(job.inputs[1] == base .. '/photo-1.ARW')
+                    local job=Json.decode(read(state.job)); assert(job.mode == (denoise and 'denoise' or 'auto') and job.camera == 'auto'); assert(job.inputs[1] == base .. '/photo-1.ARW')
                     write(state.log, 'mock engine diagnostics')
                     if scenario == 'engine-failure' then
                         write(state.result, '{"version":1,"status":"error","message":"test capture rejected"}')
@@ -84,13 +91,13 @@ local ok, problem = pcall(function()
         _G._PLUGIN={path=base .. '/plugin'}
         _G.WIN_ENV=false
         package.loaded.Workflow=nil
-        require('Workflow').start(false)
-        if scenario == 'success' then
+        require('Workflow').start(denoise)
+        if scenario == 'success' or scenario == 'sixteen' or scenario == 'denoise' then
             assert(#state.imports == 1 and state.imports[1] == output)
             assert(not exists(state.job) and not exists(state.result))
             assert(exists(state.log) == 'file')
             assert(state.dialogs[1].severity == 'info')
-        elseif scenario == 'cancel' then
+        elseif scenario == 'cancel' or scenario == 'options-cancel' then
             assert(#state.commands == 0 and #state.imports == 0 and #state.dialogs == 0)
         else
             assert(#state.imports == 0)
@@ -107,4 +114,4 @@ local ok, problem = pcall(function()
 end)
 cleanup()
 assert(ok, problem)
-print('Plugin mocked workflow checks passed (7 scenarios)')
+print('Plugin mocked workflow checks passed (10 scenarios)')

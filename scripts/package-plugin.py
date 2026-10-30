@@ -112,7 +112,7 @@ def build_package(binary, platform, output_dir, revision, metadata, info=None):
         'Extract this ZIP completely, keep SonyPixelShift.lrplugin in a permanent\n'
         'location, then add that directory in Lightroom Classic: File > Plug-in\n'
         'Manager > Add. Select exactly 4 or 16 original a7CR Pixel Shift ARWs and\n'
-        'use Library > Plug-in Extras > Merge Sony a7CR Pixel Shift.\n\n'
+        'use Library > Plug-in Extras > Pixel Shift: more detail (4 or 16 RAWs).\n\n'
         'No separate Rust, Python, Perl, ExifTool, or engine installation is needed.\n'
         'See TESTING.md for installation, troubleshooting, and diagnostic reporting.\n'
         'This development build is not notarized or publisher-signed. macOS may\n'
