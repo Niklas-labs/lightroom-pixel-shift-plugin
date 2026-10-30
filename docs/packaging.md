@@ -66,7 +66,8 @@ Packaging runs on the target OS because it executes the built engine's `info`
 command. Output goes to `dist/`; the staged `.lrplugin` is under the platform
 subdirectory, and distribution ZIP/checksum files are at the top level.
 
-The current package uses experimental linear DNG output and whole-image merging.
+The current package uses experimental lossless linear DNG with streamed output
+regions; normalized source frames still remain in RAM.
 TIFF remains available through CLI jobs. Linux package gates also compare DNG
 samples/calibration/preview in independent tifffile and LibRaw readers for all
 three merge modes. Lightroom host acceptance, compression, tiled processing and

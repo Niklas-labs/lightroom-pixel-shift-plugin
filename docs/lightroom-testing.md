@@ -59,7 +59,8 @@ Sources must be in one folder. The plugin checks the
 bundled engine version, passes original paths to it, and imports the DNG only
 after successful completion. Lightroom's top-left activity area shows the job
 while it runs: preparing/checking, decoding RAW i of N, aligning/merging, writing
-DNG and adding to Lightroom. Decode counts reflect started frames; merge/write
+DNG and adding to Lightroom. Streamed jobs also show completed output-region
+counts while combining and saving. Decode counts reflect started frames; merge/write
 use an activity indicator rather than an invented time percentage. Progress ends
 before the completion/error dialog. Cancellation is not offered until the engine
 supports safe cooperative cancellation. The completion dialog confirms the catalog lookup
@@ -67,8 +68,8 @@ and attempts to select the result. If it is hidden, check library filters and th
 current collection; the plugin preserves both. A saved DNG remains available if
 catalog import fails.
 
-Sixteen-shot captures are also available, but the current whole-image engine may
-use roughly 7–10 GB RAM. Do the first sixteen-shot test on a machine with enough
+Sixteen-shot captures are also available, but float32 source buffers alone use
+about 3.9 GB at 61 MP; decoder/allocator working memory is additional. Do the first sixteen-shot test on a machine with enough
 free memory. The plugin doesn't apply Lightroom edits from the selected sources;
 it reconstructs their original sensor data.
 
@@ -140,11 +141,18 @@ Start with four real a7CR Pixel Shift ARWs. The result uses `-PixelShift.dng`
    identification and correction behavior. Proprietary Sony lens corrections are
    not copied/applied; do not assume a correct lens name proves correct geometry.
 5. Repeat with sixteen shots only after the four-shot checks pass, including
-   detail and moving subjects. Existing whole-image memory requirements remain.
+   detail and moving subjects. Input frames still require several GB; only output is streamed so far.
 
 The raw image stores camera RGB, without baked WB, gamma, sRGB, tone curve or
 source Lightroom edits. Float32 preserves negative black noise and headroom.
 Only the small preview is rendered to sRGB; allow Lightroom to generate its
-Develop preview before comparing appearances. The first DNG writer is
-uncompressed: approximately 0.73 GB at 61 MP and 2.9 GB at 244 MP. Compression and
-bounded-memory reconstruction remain follow-ups. See [DNG validation](dng.md).
+Develop preview before comparing appearances. DNG now uses lossless Deflate strips by default. File size depends on content;
+uncompressed equivalents are about 0.73 GB at 61 MP and 2.9 GB at 244 MP. Output
+regions are streamed, while packed/disk-backed input storage remains a follow-up. See [DNG validation](dng.md).
+
+For the streamed/lossless build, repeat a four-shot merge and verify the DNG's
+Develop rendering, Adaptive profiles and AI Denoise. Numerical tests prove sample
+parity, not Lightroom host behavior. Keep the performance log: it now records
+stage timings, source/region allocation sizes, output bytes and OS peak memory.
+The loader/restart check from the earlier build is still pending; install with
+Lightroom fully closed and verify the registered plugin path.

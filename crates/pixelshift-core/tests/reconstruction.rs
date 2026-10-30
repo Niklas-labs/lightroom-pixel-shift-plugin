@@ -181,3 +181,102 @@ fn red_only_motion_is_detected() {
         fs[0].sample(14., 14., 0)
     );
 }
+
+#[test]
+fn output_regions_match_whole_image_reference_across_seams_and_workers() {
+    for mode in [Mode::Four, Mode::Sixteen, Mode::Denoise] {
+        let mut sources = frames(mode);
+        for y in 10..19 {
+            for x in 14..26 {
+                sources[1].pixels[y * 40 + x] += 0.25;
+            }
+        }
+        let opts = Options {
+            mode,
+            motion_threshold: 0.06,
+            alignment_radius: 1,
+        };
+        let (reference, report) = merge(&sources, &SonyA7Cr, &opts).unwrap();
+        for workers in [1, 3] {
+            for (tw, th) in [(1, 1), (7, 5), (13, 11)] {
+                rayon::ThreadPoolBuilder::new()
+                    .num_threads(workers)
+                    .build()
+                    .unwrap()
+                    .install(|| {
+                        let prepared = PreparedMerge::new(&sources, &SonyA7Cr, &opts).unwrap();
+                        let (width, height) = prepared.dimensions();
+                        let mut assembled = vec![0.0; width * height * 3];
+                        let mut fallback = 0;
+                        for y in (0..height).step_by(th) {
+                            for x in (0..width).step_by(tw) {
+                                let rw = tw.min(width - x);
+                                let rh = th.min(height - y);
+                                let region = prepared
+                                    .read_region(Region {
+                                        x,
+                                        y,
+                                        width: rw,
+                                        height: rh,
+                                    })
+                                    .unwrap();
+                                fallback += region.fallback_pixels;
+                                for row in 0..rh {
+                                    let to = ((y + row) * width + x) * 3;
+                                    let from = row * rw * 3;
+                                    assembled[to..to + rw * 3]
+                                        .copy_from_slice(&region.image.rgb[from..from + rw * 3]);
+                                }
+                            }
+                        }
+                        assert_eq!(
+                            assembled.iter().map(|n| n.to_bits()).collect::<Vec<_>>(),
+                            reference
+                                .rgb
+                                .iter()
+                                .map(|n| n.to_bits())
+                                .collect::<Vec<_>>()
+                        );
+                        assert_eq!(fallback, report.fallback_pixels);
+                        assert_eq!(
+                            prepared.report(fallback).residual_shifts,
+                            report.residual_shifts
+                        );
+                    });
+            }
+        }
+    }
+}
+#[test]
+fn output_region_bounds_are_checked() {
+    let frames = frames(Mode::Four);
+    let plan = PreparedMerge::new(&frames, &SonyA7Cr, &options(Mode::Four)).unwrap();
+    for region in [
+        Region {
+            x: 0,
+            y: 0,
+            width: 0,
+            height: 1,
+        },
+        Region {
+            x: 31,
+            y: 0,
+            width: 2,
+            height: 1,
+        },
+        Region {
+            x: 0,
+            y: 23,
+            width: 1,
+            height: 2,
+        },
+        Region {
+            x: usize::MAX,
+            y: 0,
+            width: 2,
+            height: 1,
+        },
+    ] {
+        assert!(plan.read_region(region).is_err());
+    }
+}

@@ -60,7 +60,7 @@ function M.start(denoise)
                         view:static_text { title = 'Input: ' .. summary.input },
                         view:static_text { title = 'Result: ' .. summary.result },
                         view:static_text { title = 'Best for: ' .. summary.capture },
-                        view:static_text { title = 'Output: Linear DNG (uncompressed)' },
+                        view:static_text { title = 'Output: Linear DNG (lossless)' },
                         view:static_text { title = 'Save as: ' .. LrPathUtils.leafName(output) },
                         view:static_text { title = 'Folder: Beside source photos' },
                         view:static_text { title = 'Camera: Auto-detected | Experimental' },

@@ -2,6 +2,8 @@
 use anyhow::{Result, ensure};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
+mod streaming;
+pub use streaming::{ImageSource, PreparedMerge, Region, RenderedRegion};
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
@@ -168,69 +170,16 @@ pub fn merge(
     profile: &dyn CameraProfile,
     opts: &Options,
 ) -> Result<(Image, Report)> {
-    ensure!(!frames.is_empty(), "no frames");
-    ensure!(
-        opts.motion_threshold.is_finite() && opts.motion_threshold >= 0.0,
-        "invalid motion threshold"
-    );
-    ensure!(
-        (0..=8).contains(&opts.alignment_radius),
-        "alignment radius must be 0..8"
-    );
-    let expected = match opts.mode {
-        Mode::Four => 4,
-        Mode::Sixteen => 16,
-        Mode::Denoise => frames.len(),
-    };
-    ensure!(
-        frames.len() == expected && (2..=64).contains(&expected),
-        "incorrect frame count"
-    );
+    let prepared = PreparedMerge::new(frames, profile, opts)?;
     let first = &frames[0];
-    for (i, f) in frames.iter().enumerate() {
-        f.validate()?;
-        ensure!(
-            f.model == profile.model(),
-            "unsupported camera: {}",
-            f.model
-        );
-        ensure!(
-            (f.width, f.height, f.cfa) == (first.width, first.height, first.cfa),
-            "inconsistent sensor geometry/CFA"
-        );
-        ensure!(
-            f.sequence == i + 1,
-            "sequence must be unique, complete, and ordered from 1"
-        );
-    }
-    let shifts: Vec<_> = (0..frames.len())
-        .map(|i| profile.shift(opts.mode, i))
-        .collect();
-    ensure!(
-        shifts
-            .iter()
-            .all(|(x, y)| x.is_finite() && y.is_finite() && x.abs() <= 2.0 && y.abs() <= 2.0),
-        "unsupported or unsafe camera shift layout"
+    let (shifts, residual, margin, scale, width, height) = (
+        &prepared.shifts,
+        &prepared.residual,
+        prepared.margin,
+        prepared.scale,
+        prepared.width,
+        prepared.height,
     );
-    let residual: Vec<_> = frames
-        .iter()
-        .enumerate()
-        .map(|(i, f)| {
-            if i == 0 {
-                (0, 0)
-            } else {
-                alignment(first, f, shifts[0], shifts[i], opts.alignment_radius)
-            }
-        })
-        .collect();
-    let margin = 4 + opts.alignment_radius as usize;
-    ensure!(
-        first.width > 2 * margin && first.height > 2 * margin,
-        "sensor too small for alignment/crop"
-    );
-    let scale = if opts.mode == Mode::Sixteen { 2 } else { 1 };
-    let width = (first.width - 2 * margin) * scale;
-    let height = (first.height - 2 * margin) * scale;
     let mut rgb = vec![0.0; width * height * 3];
     let fallback = std::sync::atomic::AtomicUsize::new(0);
     rgb.par_chunks_mut(width * 3)
@@ -292,7 +241,7 @@ pub fn merge(
         Report {
             width,
             height,
-            residual_shifts: residual,
+            residual_shifts: residual.clone(),
             fallback_pixels: fallback.load(std::sync::atomic::Ordering::Relaxed),
             sensor_origin: (margin, margin),
         },

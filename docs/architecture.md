@@ -45,9 +45,11 @@ MakerNotes, GPS, serials and geometry-dependent correction tags are omitted.
 The DNG writer stores camera-space float32 **linear DNG 1.4**, with dual A/D65
 catalog matrices when available (single-D65 fallback), as-shot neutral, black/white semantics, crop, orientation, standard
 EXIF and a bounded sRGB preview SubIFD. Main RGB is not gamma encoded or white
-balanced. Uncompressed strips borrow the merged RGB buffer; sources are released
-before output. This bounds writer overhead but does not fix the whole-image
-merger's peak memory. TIFF remains a separate rendered output.
+balanced. A prepared alignment plan implements a pull-based output-region
+source. DNG/TIFF writers reconstruct and encode a single band at a time, without
+a full RGB result. Deflate is lossless; the preview is collected from these
+bands. Source frames remain in RAM; packed and disk-backed input sources are
+next. See [streaming](streaming.md) for interfaces, measurements and limits.
 
 Numerical roundtrips, independent tifffile/LibRaw checks and a local Adobe SDK
 validator check cover synthetic output. Lightroom Adaptive profiles, AI Denoise,

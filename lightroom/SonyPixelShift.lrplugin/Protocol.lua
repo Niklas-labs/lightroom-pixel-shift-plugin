@@ -12,7 +12,7 @@ function M.job(paths, output, mode)
     for i, path in ipairs(paths) do inputs[i] = M.jsonString(path) end
     return '{"version":1,"camera":"auto","mode":' .. M.jsonString(mode)
         .. ',"inputs":[' .. table.concat(inputs, ',') .. '],"output":'
-        .. M.jsonString(output) .. ',"motion_threshold":0.08,"alignment_radius":2}'
+        .. M.jsonString(output) .. ',"motion_threshold":0.08,"alignment_radius":2,"compression":"lossless","strip_rows":32}'
 end
 function M.quote(path, windows)
     assert(not path:find('[%z\r\n]'), 'Invalid command path')

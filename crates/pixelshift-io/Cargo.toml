@@ -13,3 +13,6 @@ serde-saphyr = { version = "=2.0.0", default-features = false, features = ["seri
 rawler = { version = "=0.8.0", default-features = false }
 tiff = "0.10"
 tempfile = "3"
+
+flate2 = "1"
+bytemuck = "1"

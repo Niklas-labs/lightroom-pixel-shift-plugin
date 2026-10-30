@@ -124,8 +124,9 @@ def build_package(binary, platform, output_dir, revision, metadata, info=None):
         'The camera profile and motion correction remain experimental. Output is\n'
         'linear DNG by default; TIFF remains available through the CLI.\n'
         'Adobe Adaptive profiles and AI Denoise need Lightroom host verification.\n'
-        'Bounded-memory processing remains planned separately.\n'
-        'Keep original RAWs. A 16-shot capture can currently use 7-10 GB RAM.\n', encoding='utf-8')
+        'Output regions are streamed; source frames still remain in RAM.\n'
+        'DNG compression is lossless. Keep original RAWs; 16-shot sources alone\n'
+        'use about 3.9 GB RAM at 61 MP, plus decoder working memory.\n', encoding='utf-8')
     archive = output_dir / f'SonyPixelShift-{version}-{platform}.zip'
     with zipfile.ZipFile(archive, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as zipped:
         for path in sorted(stage.rglob('*')):

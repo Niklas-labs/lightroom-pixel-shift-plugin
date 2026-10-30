@@ -1,7 +1,7 @@
 use anyhow::{Context, Result, ensure};
 use clap::{Parser, Subcommand};
-use pixelshift_core::{CameraProfile, Mode, Options, merge};
-use pixelshift_io::{OutputWriter, RawDecoder, profiles::Catalog};
+use pixelshift_core::{CameraProfile, ImageSource, Mode, Options, PreparedMerge, merge};
+use pixelshift_io::{OutputCompression, RawDecoder, WriteOptions, profiles::Catalog};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
@@ -12,6 +12,7 @@ use std::{
 };
 
 mod detection;
+mod metrics;
 
 const PROTOCOL_VERSION: u32 = 1;
 #[derive(Parser)]
@@ -35,6 +36,9 @@ enum Commands {
         /// Enable synthetic JSON sensor input (never automatic).
         #[arg(long)]
         fixtures: bool,
+        /// Development numerical reference; deliberately requires synthetic input.
+        #[arg(long, requires = "fixtures")]
+        reference: bool,
         /// Write a machine-readable completion/error record to a new file.
         #[arg(long)]
         result: Option<PathBuf>,
@@ -70,6 +74,13 @@ struct Job {
     motion_threshold: f32,
     #[serde(default = "radius")]
     alignment_radius: i32,
+    #[serde(default)]
+    compression: OutputCompression,
+    #[serde(default = "strip_rows")]
+    strip_rows: usize,
+}
+fn strip_rows() -> usize {
+    32
 }
 fn threshold() -> f32 {
     0.08
@@ -122,6 +133,9 @@ fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
             "camera_profile_schema_version": catalog.schema_version,
             "metadata_backend": pixelshift_io::metadata_backend(),
             "output_formats": ["dng", "tiff"],
+            "output_compressions":["lossless","none"],
+            "streamed_output":true,
+            "source_storage":"normalized_f32_ram",
             "experimental": true,
             "autodetection": true,
         })),
@@ -134,7 +148,11 @@ fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
             Ok(json!({"camera_models":models,"profiles":catalog.cameras,"experimental":true}))
         }
         Commands::Merge {
-            job, fixtures, log, ..
+            job,
+            fixtures,
+            reference,
+            log,
+            ..
         } => {
             if let Some(path) = log {
                 diagnostics.file = Some(
@@ -151,9 +169,16 @@ fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
                 PROTOCOL_VERSION
             ))?;
             let started = Instant::now();
-            let spec: Job = serde_json::from_reader(fs::File::open(job).context("opening job")?)
-                .context("invalid job JSON")?;
+            let spec: Job = serde_json::from_reader(std::io::BufReader::new(
+                fs::File::open(job).context("opening job")?,
+            ))
+            .context("invalid job JSON")?;
             ensure!(spec.version == PROTOCOL_VERSION, "unsupported job version");
+            let write_options = WriteOptions {
+                compression: spec.compression,
+                strip_rows: spec.strip_rows,
+            };
+            write_options.validate()?;
             let mode = detection::mode(spec.mode.as_deref(), spec.inputs.len())?;
             let required = spec.inputs.len();
             let base = job.parent().unwrap_or(Path::new("."));
@@ -192,6 +217,8 @@ fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
                 "camera profile does not support selected mode"
             );
             diagnostics.record(format!("detected {camera}, {mode:?}, {required} sources"))?;
+            let preflight_seconds = started.elapsed().as_secs_f64();
+            let decode_start = Instant::now();
             let mut decoded = Vec::new();
             for (i, path) in paths.iter().enumerate() {
                 diagnostics.record(format!("decode {}/{}: {}", i + 1, required, path.display()))?;
@@ -225,6 +252,7 @@ fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
                 }
                 decoded.push(frame);
             }
+            let decode_seconds = decode_start.elapsed().as_secs_f64();
             decoded.sort_by_key(|d| d.frame.sequence);
             if mode == Mode::Denoise {
                 // Burst indices may start anywhere or be absent. Pixel Shift
@@ -259,25 +287,92 @@ fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
             ))?;
             let frames = decoded.into_iter().map(|d| d.frame).collect::<Vec<_>>();
             diagnostics.record("merge and motion correction")?;
-            let (image, report) = merge(
-                &frames,
-                profile,
-                &Options {
-                    mode,
-                    motion_threshold: spec.motion_threshold,
-                    alignment_radius: spec.alignment_radius,
-                },
-            )?;
+            let source_buffer_bytes = frames
+                .iter()
+                .map(|frame| frame.pixels.capacity() as u64 * 4)
+                .sum::<u64>();
+            let options = Options {
+                mode,
+                motion_threshold: spec.motion_threshold,
+                alignment_radius: spec.alignment_radius,
+            };
+            let plan_start = Instant::now();
+            let prepared = PreparedMerge::new(&frames, profile, &options)?;
+            let validation_alignment_seconds = plan_start.elapsed().as_secs_f64();
+            let geometry = prepared.report(0);
+            let (width, height) = prepared.dimensions();
             if let Some(crop) = source_crop {
                 color.default_crop = Some(pixelshift_io::map_reference_crop(
                     crop,
                     sensor_size,
-                    report.sensor_origin,
+                    geometry.sensor_origin,
                     profile.shift(mode, 0),
                     if mode == Mode::Sixteen { 2 } else { 1 },
-                    (image.width, image.height),
+                    (width, height),
                 )?);
             }
+            // Whole-image execution is a development oracle, not a memory mode.
+            let reference_start = Instant::now();
+            let reference_result = if *reference {
+                Some(merge(&frames, profile, &options)?)
+            } else {
+                None
+            };
+            let reference_seconds = if *reference {
+                reference_start.elapsed().as_secs_f64()
+            } else {
+                0.0
+            };
+            let source: &dyn ImageSource = match &reference_result {
+                Some((image, _)) => image,
+                None => &prepared,
+            };
+            diagnostics.record(format!(
+                "writing {}x{} {}",
+                width,
+                height,
+                format.to_uppercase()
+            ))?;
+            diagnostics.record(format!(
+                "execution: {}; source buffers: {} bytes; compression: {:?}; strip rows: {}",
+                if *reference {
+                    "whole-image fixture reference"
+                } else {
+                    "streamed output"
+                },
+                source_buffer_bytes,
+                spec.compression,
+                spec.strip_rows
+            ))?;
+            let output_stats = {
+                let mut progress =
+                    |done, total| diagnostics.record(format!("output region {done}/{total}"));
+                if format == "dng" {
+                    pixelshift_io::write_dng_from_source(
+                        &output,
+                        source,
+                        &color,
+                        write_options,
+                        &mut progress,
+                    )?
+                } else {
+                    pixelshift_io::write_tiff_from_source(
+                        &output,
+                        source,
+                        &color,
+                        write_options,
+                        &mut progress,
+                    )?
+                }
+            };
+            let report = match &reference_result {
+                Some((_, report)) => prepared.report(report.fallback_pixels),
+                None => prepared.report(output_stats.fallback_pixels),
+            };
+            drop(reference_result);
+            drop(prepared);
+            drop(frames);
+            let resources = metrics::snapshot();
             diagnostics.record(format!(
                 "alignment residuals (sensor pixels): {:?}",
                 report.residual_shifts
@@ -285,29 +380,27 @@ fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
             diagnostics.record(format!(
                 "motion reference fallback: {} / {} ({:.3}%); DNG default crop: {:?}",
                 report.fallback_pixels,
-                image.width * image.height,
-                report.fallback_pixels as f64 / (image.width * image.height) as f64 * 100.0,
+                width * height,
+                report.fallback_pixels as f64 / (width * height) as f64 * 100.0,
                 color.default_crop
             ))?;
-            drop(frames); // Release source buffers before writing the result.
+            let execution = json!({"streamed_output":!reference,"source_storage":"normalized_f32_ram",
+                "source_buffer_bytes":source_buffer_bytes,"peak_output_region_bytes":output_stats.peak_region_pixels*3*4,
+                "compression":spec.compression,"strip_rows":spec.strip_rows,
+                "timings":{"preflight_seconds":preflight_seconds,"decode_seconds":decode_seconds,
+                    "validation_alignment_seconds":validation_alignment_seconds,"reference_seconds":reference_seconds,
+                    "output":output_stats,"total_seconds":started.elapsed().as_secs_f64()},"resources":resources});
             diagnostics.record(format!(
-                "writing {}x{} {}",
-                image.width,
-                image.height,
-                format.to_uppercase()
+                "performance: {}",
+                serde_json::to_string(&execution)?
             ))?;
-            if format == "dng" {
-                pixelshift_io::DngWriter.write(&output, &image, &color)?;
-            } else {
-                pixelshift_io::TiffWriter.write(&output, &image, &color)?;
-            }
             diagnostics.record(format!(
                 "complete in {:.2}s; {} pixels used reference fallback",
                 started.elapsed().as_secs_f64(),
                 report.fallback_pixels
             ))?;
             Ok(
-                json!({"version":PROTOCOL_VERSION,"status":"complete","output":output,"report":report,"detected":{"camera":camera,"mode":mode,"source_count":required}}),
+                json!({"version":PROTOCOL_VERSION,"status":"complete","output":output,"report":report,"execution":execution,"detected":{"camera":camera,"mode":mode,"source_count":required}}),
             )
         }
     }

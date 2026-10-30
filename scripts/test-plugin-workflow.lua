@@ -93,7 +93,7 @@ local ok, problem = pcall(function()
                 function scope:setPausable(pausable,cancelable) assert(pausable == false and cancelable == false) end
                 function scope:setIndeterminate() assert(not self.ended) end
                 function scope:setPortionComplete(done,total)
-                    assert(not self.ended and done >= 0 and done < total and total == count)
+                    assert(not self.ended and done >= 0 and done < total and (total == count or total == 3))
                 end
                 function scope:setCaption(caption)
                     assert(not self.ended)
@@ -142,7 +142,7 @@ local ok, problem = pcall(function()
                         if scenario == 'launch-failure' then return 126 end
                         local path=assert(command:match("'%-?%-output' '([^']+)'"))
                         write(path, '{"protocol_version":1,"engine_version":"' ..
-                            (scenario == 'bad-handshake' and '9.0' or '0.1.0') .. '","camera_models":["ILCE-7CR"],"autodetection":true,"output_formats":["dng","tiff"]}')
+                            (scenario == 'bad-handshake' and '9.0' or '0.1.0') .. '","camera_models":["ILCE-7CR"],"autodetection":true,"output_formats":["dng","tiff"],"streamed_output":true,"output_compressions":["lossless","none"]}')
                         return 0
                     end
                     state.job=assert(command:match("'%-%-job' '([^']+)'"))
@@ -164,6 +164,10 @@ local ok, problem = pcall(function()
                         state.inExecute=false
                         return 1
                     end
+                    append(state.log, 'output region 1/2\n')
+                    coroutine.yield()
+                    append(state.log, 'output region 2/2\n')
+                    coroutine.yield()
                     write(output, 'mock DNG')
                     write(state.result, '{"version":1,"status":"complete","output":' ..
                         Protocol.jsonString(scenario == 'wrong-output' and output .. '.wrong' or output) .. '}')
@@ -185,7 +189,7 @@ local ok, problem = pcall(function()
             for _, update in ipairs(state.captions) do
                 if update.duringExecute then seen[update.text]=true end
             end
-            assert(seen['Decoding RAW 1 of ' .. count] and seen['Aligning and merging'] and seen['Writing DNG'], 'No live progress during execution')
+            assert(seen['Decoding RAW 1 of ' .. count] and seen['Aligning and merging'] and seen['Writing DNG'] and seen['Combining and saving 2 of 2'], 'No live progress during execution')
             assert(#state.imports == 1 and state.imports[1] == output)
             assert(not exists(state.job) and not exists(state.result))
             assert(exists(state.log) == 'file')

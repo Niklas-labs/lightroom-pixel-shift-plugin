@@ -1,0 +1,124 @@
+{
+  "fixture": "synthetic textured/noisy Bayer; six decimal input samples",
+  "width": 1024,
+  "height": 768,
+  "mode": "sixteen",
+  "workers": 4,
+  "strip_rows": 32,
+  "platform": "Linux-6.18.55-x86_64-with-glibc2.41",
+  "machine": "x86_64",
+  "cache_state": "uncontrolled; generated fixtures may be cached",
+  "runs": [
+    {
+      "variant": "reference-none",
+      "wall_seconds": 1.0128820070021902,
+      "execution": {
+        "compression": "none",
+        "peak_output_region_bytes": 780288,
+        "resources": {
+          "cpu_system_seconds": 0.070897,
+          "cpu_user_seconds": 1.453262,
+          "input_block_operations": 0,
+          "output_block_operations": 0,
+          "peak_resident_bytes": 95916032
+        },
+        "source_buffer_bytes": 67108864,
+        "source_storage": "normalized_f32_ram",
+        "streamed_output": false,
+        "strip_rows": 32,
+        "timings": {
+          "decode_seconds": 0.458269441,
+          "output": {
+            "encode_write_seconds": 0.009389372,
+            "fallback_pixels": 0,
+            "output_bytes": 37644880,
+            "peak_region_pixels": 65024,
+            "preview_seconds": 0.007846842,
+            "reconstruction_seconds": 0.0023539720000000006,
+            "regions": 48,
+            "total_seconds": 0.024386126
+          },
+          "preflight_seconds": 0.02897881,
+          "reference_seconds": 0.483866169,
+          "total_seconds": 1.00833605,
+          "validation_alignment_seconds": 0.011664348
+        }
+      },
+      "decoded_sha256": "bbc51dac85907512069258c8999b7eee2681c1f557e97779f9b7ea820fb3e4f4"
+    },
+    {
+      "variant": "streamed-none",
+      "wall_seconds": 1.0017133049987024,
+      "execution": {
+        "compression": "none",
+        "peak_output_region_bytes": 780288,
+        "resources": {
+          "cpu_system_seconds": 0.031621,
+          "cpu_user_seconds": 1.522501,
+          "input_block_operations": 0,
+          "output_block_operations": 0,
+          "peak_resident_bytes": 59256832
+        },
+        "source_buffer_bytes": 67108864,
+        "source_storage": "normalized_f32_ram",
+        "streamed_output": true,
+        "strip_rows": 32,
+        "timings": {
+          "decode_seconds": 0.466924662,
+          "output": {
+            "encode_write_seconds": 0.008507313999999997,
+            "fallback_pixels": 0,
+            "output_bytes": 37644880,
+            "peak_region_pixels": 65024,
+            "preview_seconds": 0.007969061,
+            "reconstruction_seconds": 0.468184894,
+            "regions": 48,
+            "total_seconds": 0.489822721
+          },
+          "preflight_seconds": 0.028667251,
+          "reference_seconds": 0.0,
+          "total_seconds": 0.997148059,
+          "validation_alignment_seconds": 0.011605017
+        }
+      },
+      "decoded_sha256": "bbc51dac85907512069258c8999b7eee2681c1f557e97779f9b7ea820fb3e4f4"
+    },
+    {
+      "variant": "streamed-lossless",
+      "wall_seconds": 1.1077504490021965,
+      "execution": {
+        "compression": "lossless",
+        "peak_output_region_bytes": 780288,
+        "resources": {
+          "cpu_system_seconds": 0.036308,
+          "cpu_user_seconds": 1.671779,
+          "input_block_operations": 0,
+          "output_block_operations": 0,
+          "peak_resident_bytes": 58920960
+        },
+        "source_buffer_bytes": 67108864,
+        "source_storage": "normalized_f32_ram",
+        "streamed_output": true,
+        "strip_rows": 32,
+        "timings": {
+          "decode_seconds": 0.464048053,
+          "output": {
+            "encode_write_seconds": 0.205643081,
+            "fallback_pixels": 0,
+            "output_bytes": 31936996,
+            "peak_region_pixels": 65024,
+            "preview_seconds": 0.007289818,
+            "reconstruction_seconds": 0.379289893,
+            "regions": 48,
+            "total_seconds": 0.597861487
+          },
+          "preflight_seconds": 0.030006067,
+          "reference_seconds": 0.0,
+          "total_seconds": 1.103706251,
+          "validation_alignment_seconds": 0.011646621
+        }
+      },
+      "decoded_sha256": "bbc51dac85907512069258c8999b7eee2681c1f557e97779f9b7ea820fb3e4f4"
+    }
+  ]
+}

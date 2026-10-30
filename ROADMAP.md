@@ -20,7 +20,8 @@ are complete only when their acceptance criteria have been verified.
 - [x] Optimized release builds with thin LTO and Rayon-parallel reconstruction.
 
 These checks do not establish real-camera image quality or Lightroom SDK host
-acceptance. The alpha still holds whole frames and the output in memory.
+acceptance. The current path holds source frames in RAM and streams output regions; a full
+reconstructed image is no longer retained.
 
 ## 1. Validate the alpha with real captures
 
@@ -74,8 +75,11 @@ camera. Keep manual camera configuration out of the normal supported workflow.
 
 ## 3. Measure performance before tuning
 
-- [ ] Record decode, guide generation, alignment, reconstruction, rendering,
-  compression and writing time separately, alongside peak memory and disk I/O.
+- [x] Add initial preflight/decode, validation+alignment, region reconstruction,
+  encode/write, preview and total timings, output bytes and OS peak resident
+  memory. Report CPU/block-operation counters where available.
+- [ ] Split internal decode/guide/alignment and compression/write timing further
+  when those stages gain separate interfaces; block operations are not byte I/O.
 - [ ] Establish full-size four-shot/sixteen-shot baselines on Apple Silicon,
   Intel and Windows hardware. Report hardware, storage and cold/warm cache state.
 - [ ] Profile repeated interpolation, allocations and per-pixel bookkeeping.
@@ -87,8 +91,10 @@ tradeoff. CI runner timing is a regression signal, not a product speed promise.
 
 ## 4. Tile processing and offer memory/performance preferences
 
-- [ ] Introduce region-source and streaming-output interfaces, retaining the
-  current small-image merger as a numerical reference during migration.
+- [x] Introduce output-region and pull-based streaming writer interfaces. Keep
+  the whole-image fixture merger as a numerical reference.
+- [ ] Add raw input-region sources and bounded source caches for packed/disk
+  storage; current output regions still sample full RAM source frames.
 - [ ] Decode each ARW once into packed `u16` sensor storage, with interchangeable
   RAM and disk stores. Normalize only the regions currently being processed.
 - [ ] Build small alignment guides during ingestion; release whole-frame decoder
@@ -96,7 +102,11 @@ tradeoff. CI runner timing is a regression signal, not a product speed promise.
 - [ ] Reconstruct overlapping output tiles with halos derived from the transform,
   interpolation kernel and motion-mask neighborhood. Anchor coordinates globally
   so tile boundaries do not change results.
-- [ ] Stream TIFF output without allocating the full reconstructed RGB image.
+- [x] Stream DNG/TIFF reconstruction and encoding without a full RGB output.
+  Stitch irregular regions with global coordinates; verify float-bit equality,
+  preview parity, motion fallback and worker-count independence.
+- [x] Pull one output band at a time with writer backpressure, collect a bounded
+  preview from those pixels, and clean partial output on late failures.
 - [ ] Bound source caches, active tiles, codec workspace and pending writes under
   one memory budget, with writer backpressure.
 - [ ] Expose **Auto**, **Low memory** and **High performance** execution preferences,
@@ -160,14 +170,16 @@ real TIFF testing has exposed Adobe profile and RAW editing limitations.
   negative black noise, with DNG 1.4 semantics and no quantization to 16-bit.
   Evaluate compressed storage separately; lossless compression does not remove
   integer quantization.
-- [ ] Start with uncompressed tiles, then add bounded parallel lossless tile
-  compression. Avoid embedding all source ARWs by default.
+- [x] Add lossless Deflate strips (fast level, no float quantization), with
+  uncompressed diagnostic output and independent/Adobe reader checks.
+- [ ] Add true 2D output tiles and bounded parallel compression if profiling
+  justifies it. Avoid embedding all source ARWs by default.
 - [ ] Validate with Adobe DNG tooling, an independent reader and Lightroom import/
   development, including WB, exposure recovery, color, crop and orientation.
 - [x] Retain TIFF as a CLI alternative. The plugin now selects experimental DNG
   explicitly for Lightroom host testing; this is not a stable-output claim.
-- [x] Stream uncompressed float32 strips without another full-size output buffer,
-  with a bounded preview SubIFD and source buffers released before writing.
+- [x] Stream reconstructed float32 regions into lossless/uncompressed strips,
+  with a bounded preview SubIFD. Sources remain in RAM through output rendering.
 - [x] Check synthetic sample/WB/matrix/metadata roundtrips, independent tifffile
   and LibRaw development, and local Adobe DNG SDK validation. Full-size captures,
   Adobe Adaptive Color/B&W and AI Denoise remain host acceptance gates.
@@ -220,10 +232,14 @@ dispatch only after profiling, while keeping distributed binaries compatible.
 - [ ] Add tagged release assets and Windows publisher signing; preserve native
   architecture and extracted-package tests.
 
-Implementation order: real-capture acceptance and baselines → capture
-auto-detection/generalized capabilities → tiled stores/sinks → linear DNG →
-subpixel reconstruction/motion → tuning and release polish. Run small DNG and
+Next implementation order: packed RAM/disk source stores and explicit input
+halos → measured memory budgets/preferences → subpixel reconstruction/motion →
+tuning and release polish. Real-capture acceptance and color/loader validation
+continue alongside this work. Streamed output and lossless DNG are implemented. Run small DNG and
 subpixel feasibility tests early enough to shape the region/calibration APIs.
 
 See [validation requirements](docs/validation.md) and the earlier
 [detailed milestone design](docs/next-milestones.md) for supporting detail.
+
+See [streamed reconstruction and baseline measurements](docs/streaming.md) for
+current limits and reproducible synthetic comparisons.

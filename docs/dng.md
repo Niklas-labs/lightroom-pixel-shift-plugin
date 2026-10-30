@@ -9,7 +9,8 @@ Menu commands are registered under **Library → Plug-in Extras** only.
 
 - DNGVersion and DNGBackwardVersion 1.4.0.0; classic TIFF offsets.
 - Main IFD: LinearRaw photometric interpretation (34892), three interleaved
-  camera-RGB channels, 32-bit IEEE float, uncompressed 32-row strips.
+  camera-RGB channels, 32-bit IEEE float, lossless Deflate 32-row strips by default
+  (uncompressed remains available through job configuration).
 - Samples retain the merger's normalized black-subtracted camera values, including
   negative noise and values above nominal white. BlackLevel is zero and WhiteLevel
   is one per channel. No WB, gamma, display matrix, tone curve or Lightroom edits
@@ -33,13 +34,17 @@ Menu commands are registered under **Library → Plug-in Extras** only.
 - A separate sRGB RGB8 reduced preview, at most 512 pixels per side, is referenced
   through SubIFDs. There are no chained image IFDs. Root orientation applies.
 
-Strip writes borrow the existing merged RGB buffer; preview memory is bounded.
-Sources are released before writing. This avoids the full-size TIFF render
-buffer but **does not make reconstruction bounded-memory**. Uncompressed output
-is approximately 12 bytes per pixel: 0.73 GB at 61 MP, 2.9 GB at 244 MP. Lossless
-compression and tiled reconstruction remain follow-ups. Larger images that would
-exceed classic TIFF offsets are rejected before creating output. Publication uses
-a same-directory temporary file, sync and no-clobber rename.
+The production CLI reconstructs each output band as the writer requests it; no
+full reconstructed RGB image is allocated. The preview is collected from these
+same bands. Inputs still remain in float32 RAM through processing: this is not a
+fully bounded-memory source pipeline. Lossless compression preserves sample bits;
+`compression: none` produces an uncompressed diagnostic DNG. See
+[streaming architecture and measurements](streaming.md).
+
+Uncompressed payloads are about 0.73 GB at 61 MP and 2.9 GB at 244 MP. Compressed
+size depends on content/noise. Larger images exceeding classic TIFF offsets are
+rejected, including compression overhead allowance. Publication remains atomic
+and no-clobber; late failures remove partial output.
 
 ## Automated evidence
 
@@ -56,7 +61,8 @@ gated on these checks, with pinned reader versions.
 
 A local development check also builds Adobe DNG SDK 1.6's `dng_validate` from the
 [Linux SDK mirror](https://github.com/Autoenhance-ai/adobe-dng-sdk/tree/1.6-linux),
-with XMP and JPEG disabled (the tested files are uncompressed and have no XMP).
+with XMP and JPEG disabled, with Zlib enabled (tested files have no XMP).
+Both uncompressed and Deflate strips pass, including partial final strips.
 The generated synthetic output must complete validation without warnings/errors.
 The validator is a development dependency only, not bundled in the plugin. This
 is evidence for the tested synthetic files, not a claim of Adobe certification.
@@ -109,3 +115,12 @@ exposure (0 EV) unchanged. Independent/tag/Adobe validation passes; actual Light
 WB numbers, color and brightness remain to verify. Different As Shot temperature/
 tint numbers alone do not prove an incorrect sensor white balance; do not force
 matching displayed values or add a camera exposure offset without measurement.
+
+## Streamed/compressed output acceptance
+
+Independent tests compare whole-image reference versus streamed reconstruction,
+multiple strip sizes and compression settings, including exact sample bits,
+preview bytes and source crop. Irregular-region tests cover motion fallback and
+worker counts. Rawler 0.8 cannot read Deflate strips, so its legacy reader tests
+use uncompressed files; tifffile/LibRaw and Adobe checks cover compressed DNG.
+Real Lightroom compressed-DNG rendering/Adaptive/AI acceptance remains to verify.

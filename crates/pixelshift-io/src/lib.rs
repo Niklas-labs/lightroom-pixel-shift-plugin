@@ -1,19 +1,22 @@
 //! Decoder and output boundaries. No RAW development is performed before merging.
 use anyhow::{Context, Result, bail, ensure};
-use pixelshift_core::{Frame, Image};
+use pixelshift_core::{Frame, Image, ImageSource, Region};
 use serde::{Deserialize, Serialize};
 use std::{
     fs::File,
     io::{BufWriter, Write},
     path::Path,
 };
-use tiff::encoder::{TiffEncoder, colortype};
+use tiff::encoder::TiffEncoder;
+
+mod output;
+pub use output::{OutputCompression, OutputStats, WriteOptions};
 
 mod geometry;
 pub use geometry::{Crop, map_reference_crop};
 
 mod dng;
-pub use dng::{DngWriter, write_dng};
+pub use dng::{DngWriter, write_dng, write_dng_from_source};
 
 mod metadata;
 pub mod profiles;
@@ -137,7 +140,7 @@ pub struct Fixture {
 
 pub fn decode(path: &Path, fixture: bool) -> Result<Decoded> {
     if fixture {
-        let input: Fixture = serde_json::from_reader(File::open(path)?)?;
+        let input: Fixture = serde_json::from_reader(std::io::BufReader::new(File::open(path)?))?;
         input.frame.validate()?;
         return Ok(Decoded {
             frame: input.frame,
@@ -393,8 +396,34 @@ fn write_exif<W: Write + std::io::Seek>(
     Ok(exif.finish_with_offsets()?.offset)
 }
 
-/// Same-directory temporary file + no-clobber publication. Never modifies a source file.
+/// Convenience full-image API; the encoder still uses bounded regions.
 pub fn write_tiff(path: &Path, image: &Image, color: &Color) -> Result<()> {
+    write_tiff_from_source(path, image, color, WriteOptions::default(), &mut |_, _| {
+        Ok(())
+    })
+    .map(|_| ())
+}
+pub fn write_tiff_from_source(
+    path: &Path,
+    source: &dyn ImageSource,
+    color: &Color,
+    options: WriteOptions,
+    progress: &mut dyn FnMut(usize, usize) -> Result<()>,
+) -> Result<OutputStats> {
+    use std::time::Instant;
+    options.validate()?;
+    let started = Instant::now();
+    let mut stats = OutputStats::default();
+    let (width, height) = source.dimensions();
+    ensure!(width > 0 && height > 0, "invalid TIFF dimensions");
+    let samples = width
+        .checked_mul(height)
+        .and_then(|n| n.checked_mul(3))
+        .context("TIFF dimensions overflow")?;
+    ensure!(
+        (samples as u128) * 2 + (samples as u128) / 50 + 16 * 1024 * 1024 < u32::MAX as u128,
+        "TIFF exceeds classic TIFF size limit"
+    );
     ensure!(
         path.extension()
             .is_some_and(|e| e.eq_ignore_ascii_case("tif") || e.eq_ignore_ascii_case("tiff")),
@@ -406,47 +435,108 @@ pub fn write_tiff(path: &Path, image: &Image, color: &Color) -> Result<()> {
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or(Path::new("."));
     let mut temporary = tempfile::NamedTempFile::new_in(parent)?;
-    let data = render_srgb(image, color)?;
     {
         let mut writer = BufWriter::new(temporary.as_file_mut());
         {
             let mut encoder = TiffEncoder::new(&mut writer)?;
             let metadata = &color.photo_metadata;
             let exif_offset = write_exif(&mut encoder, metadata, 1)?;
-            let mut output = encoder
-                .new_image::<colortype::RGB16>(image.width.try_into()?, image.height.try_into()?)?;
-            output
-                .encoder()
-                .write_tag(tiff::tags::Tag::ExifDirectory, exif_offset)?;
+            let mut offsets = Vec::new();
+            let mut byte_counts = Vec::new();
+            let total = height.div_ceil(options.strip_rows);
+            let mut payload = encoder.extra_directory()?;
+            for (index, y) in (0..height).step_by(options.strip_rows).enumerate() {
+                let rows = options.strip_rows.min(height - y);
+                let tile = stats.pull(
+                    source,
+                    Region {
+                        x: 0,
+                        y,
+                        width,
+                        height: rows,
+                    },
+                )?;
+                let encode_start = Instant::now();
+                let data = render_srgb(&tile.image, color)?;
+                let (offset, size) = output::write_payload(
+                    &mut payload,
+                    bytemuck::cast_slice(&data),
+                    options.compression,
+                )?;
+                offsets.push(offset);
+                byte_counts.push(size);
+                stats.encode_write_seconds += encode_start.elapsed().as_secs_f64();
+                progress(index + 1, total)?;
+            }
+            payload.finish()?;
+            let mut output = encoder.image_directory()?;
+            for (tag, value) in [
+                (tiff::tags::Tag::ImageWidth, width as u32),
+                (tiff::tags::Tag::ImageLength, height as u32),
+                (tiff::tags::Tag::RowsPerStrip, options.strip_rows as u32),
+            ] {
+                write_aligned_tag(&mut output, tag, value)?;
+            }
+            for (tag, value) in [
+                (tiff::tags::Tag::SamplesPerPixel, 3u16),
+                (tiff::tags::Tag::PlanarConfiguration, 1),
+                (tiff::tags::Tag::PhotometricInterpretation, 2),
+            ] {
+                write_aligned_tag(&mut output, tag, value)?;
+            }
+            write_aligned_tag(
+                &mut output,
+                tiff::tags::Tag::BitsPerSample,
+                &[16u16, 16, 16][..],
+            )?;
+            write_aligned_tag(
+                &mut output,
+                tiff::tags::Tag::SampleFormat,
+                &[1u16, 1, 1][..],
+            )?;
+            write_aligned_tag(
+                &mut output,
+                tiff::tags::Tag::Compression,
+                if options.compression == OutputCompression::Lossless {
+                    8u16
+                } else {
+                    1u16
+                },
+            )?;
+            write_aligned_tag(&mut output, tiff::tags::Tag::StripOffsets, &offsets[..])?;
+            write_aligned_tag(
+                &mut output,
+                tiff::tags::Tag::StripByteCounts,
+                &byte_counts[..],
+            )?;
+            output.write_tag(tiff::tags::Tag::ExifDirectory, exif_offset)?;
             for (tag, value) in [
                 (tiff::tags::Tag::Make, &metadata.make),
                 (tiff::tags::Tag::Model, &metadata.model),
             ] {
                 if let Some(value) = value {
-                    output.encoder().write_tag(tag, value.as_str())?;
+                    output.write_tag(tag, value.as_str())?;
                 }
             }
-            output
-                .encoder()
-                .write_tag(tiff::tags::Tag::Orientation, color.orientation)?;
-            output.encoder().write_tag(
+            output.write_tag(tiff::tags::Tag::Orientation, color.orientation)?;
+            output.write_tag(
                 tiff::tags::Tag::ImageDescription,
                 "Sony Pixel Shift experimental; sRGB IEC 61966-2-1; no tone mapping",
             )?;
-            output.encoder().write_tag(
+            output.write_tag(
                 tiff::tags::Tag::IccProfile,
                 &include_bytes!("../assets/srgb.icc")[..],
             )?;
-            output
-                .encoder()
-                .write_tag(tiff::tags::Tag::Software, "sony-pixelshift 0.1.0")?;
-            output.write_data(&data)?;
+            output.write_tag(tiff::tags::Tag::Software, "sony-pixelshift 0.1.0")?;
+            output.finish()?;
         }
         writer.flush()?;
     }
     temporary.as_file().sync_all()?;
+    stats.output_bytes = temporary.as_file().metadata()?.len();
     temporary.persist_noclobber(path).map_err(|e| e.error)?;
-    Ok(())
+    stats.total_seconds = started.elapsed().as_secs_f64();
+    Ok(stats)
 }
 
 /// Future formats plug into this boundary without changing sensor reconstruction.

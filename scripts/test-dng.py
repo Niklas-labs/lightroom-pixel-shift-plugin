@@ -42,6 +42,7 @@ def check(engine):
                 preview = raw.pages[0]
                 assert int(raw.photometric) == 34892
                 assert raw.dtype == np.dtype('float32')
+                assert int(raw.compression) == 8
                 assert raw.shape == (40*scale, 56*scale, 3)
                 assert raw.tags['DNGVersion'].value == bytes([1, 4, 0, 0])
                 assert raw.tags['DNGBackwardVersion'].value == bytes([1, 4, 0, 0])
@@ -63,6 +64,30 @@ def check(engine):
                 assert raw.raw_image.shape == (40*scale, 56*scale, 3)
                 assert raw.postprocess().size > 0
             print(f'{mode}: independent linear DNG sample/calibration/preview/development checks passed')
+
+
+        for mode in ('four','sixteen','denoise'):
+            with tifffile.TiffFile(root / f'{mode}.dng') as initial:
+                expected_pixels=initial.pages[0].asarray().view(np.uint32).copy()
+                expected_preview=initial.pages[0].pages[0].asarray().copy()
+            for reference,compression,rows in [(True,'lossless',17),(False,'none',1),(False,'lossless',256)]:
+                spec=dict(job,mode=mode,inputs=job['inputs'] if mode=='sixteen' else job['inputs'][:4],
+                    output=f'{mode}-{reference}-{compression}-{rows}.dng',compression=compression,strip_rows=rows)
+                path=root / 'variant-job.json'
+                path.write_text(json.dumps(spec))
+                command=[str(engine),'merge','--fixtures','--job',str(path)]
+                if reference: command.append('--reference')
+                run=subprocess.run(command,check=True,capture_output=True,text=True)
+                report=json.loads(run.stdout)
+                assert report['execution']['streamed_output'] == (not reference)
+                assert report['execution']['compression'] == compression
+                assert report['execution']['peak_output_region_bytes'] <= expected_pixels.shape[1]*min(rows,expected_pixels.shape[0])*12
+                assert report['execution']['resources']['peak_resident_bytes'] > 0
+                with tifffile.TiffFile(root / spec['output']) as variant:
+                    assert int(variant.pages[0].compression) == (8 if compression=='lossless' else 1)
+                    np.testing.assert_array_equal(variant.pages[0].asarray().view(np.uint32),expected_pixels)
+                    np.testing.assert_array_equal(variant.pages[0].pages[0].asarray(),expected_preview)
+            print(f'{mode}: streaming/reference, compression, strip-size and preview bitwise parity passed')
 
         for name in job['inputs']:
             path = root / name

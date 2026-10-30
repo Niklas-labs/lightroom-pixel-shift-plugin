@@ -1,13 +1,15 @@
 //! Scene-linear camera RGB DNG, with bounded strip writes and no baked development.
 use super::{Color, OutputWriter, render_srgb, write_aligned_tag, write_exif};
+use super::{OutputCompression, OutputStats, WriteOptions};
 use anyhow::{Result, ensure};
-use pixelshift_core::Image;
+use pixelshift_core::{Image, ImageSource, Region};
+use std::time::Instant;
 use std::{
     io::{BufWriter, Write},
     path::Path,
 };
 use tiff::{
-    encoder::{Rational, SRational, TiffEncoder, colortype},
+    encoder::{Rational, SRational, TiffEncoder},
     tags::Tag,
 };
 
@@ -32,10 +34,25 @@ fn signed(value: f32) -> Result<SRational> {
     })
 }
 
-/// Publish a DNG atomically. Strip payloads reference the existing image buffer;
-/// only a small reduced preview is developed to sRGB. Float samples retain black
-/// noise and highlight headroom, with BlackLevel=0 and WhiteLevel=1.
+/// Convenience wrapper; production can pull output regions without a full image.
 pub fn write_dng(path: &Path, image: &Image, color: &Color) -> Result<()> {
+    write_dng_from_source(path, image, color, WriteOptions::default(), &mut |_, _| {
+        Ok(())
+    })
+    .map(|_| ())
+}
+/// Reconstruct/write one strip at a time, retaining only a bounded small preview.
+pub fn write_dng_from_source(
+    path: &Path,
+    source: &dyn ImageSource,
+    color: &Color,
+    options: WriteOptions,
+    progress: &mut dyn FnMut(usize, usize) -> Result<()>,
+) -> Result<OutputStats> {
+    options.validate()?;
+    let started = Instant::now();
+    let mut stats = OutputStats::default();
+    let (image_width, image_height) = source.dimensions();
     ensure!(
         path.extension()
             .is_some_and(|v| v.eq_ignore_ascii_case("dng")),
@@ -43,19 +60,13 @@ pub fn write_dng(path: &Path, image: &Image, color: &Color) -> Result<()> {
     );
     ensure!(!path.exists(), "output already exists");
     ensure!(
-        image.width > 0
-            && image.height > 0
-            && image
-                .width
-                .checked_mul(image.height)
-                .and_then(|n| n.checked_mul(3))
-                == Some(image.rgb.len()),
-        "invalid DNG image buffer"
+        image_width > 0 && image_height > 0,
+        "invalid DNG dimensions"
     );
-    ensure!(
-        image.rgb.iter().all(|v| v.is_finite()),
-        "non-finite DNG sample"
-    );
+    let samples = image_width
+        .checked_mul(image_height)
+        .and_then(|v| v.checked_mul(3))
+        .ok_or_else(|| anyhow::anyhow!("DNG dimensions overflow"))?;
     ensure!((1..=8).contains(&color.orientation), "invalid orientation");
     ensure!(
         color
@@ -68,7 +79,7 @@ pub fn write_dng(path: &Path, image: &Image, color: &Color) -> Result<()> {
     // Classic TIFF offsets are sufficient for a7CR 244 MP RGB32 (~2.93 GB).
     // Reject larger output before creating a file instead of overflowing offsets.
     ensure!(
-        (image.rgb.len() as u64) * 4 + 16 * 1024 * 1024 < u32::MAX as u64,
+        (samples as u128) * 4 + (samples as u128) / 25 + 16 * 1024 * 1024 < u32::MAX as u128,
         "DNG exceeds classic TIFF size limit"
     );
     let matrix = color
@@ -95,12 +106,12 @@ pub fn write_dng(path: &Path, image: &Image, color: &Color) -> Result<()> {
     let crop = color.default_crop.unwrap_or(super::Crop {
         x: 0,
         y: 0,
-        width: image.width,
-        height: image.height,
+        width: image_width,
+        height: image_height,
     });
-    crop.validate(image.width, image.height)?;
-    let width = u32::try_from(image.width)?;
-    let height = u32::try_from(image.height)?;
+    crop.validate(image_width, image_height)?;
+    let width = u32::try_from(image_width)?;
+    let height = u32::try_from(image_height)?;
     let parent = path
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
@@ -111,17 +122,52 @@ pub fn write_dng(path: &Path, image: &Image, color: &Color) -> Result<()> {
         {
             let mut encoder = TiffEncoder::new(&mut writer)?;
             let exif = write_exif(&mut encoder, &color.photo_metadata, u16::MAX)?;
-            // A bounded reduced preview is a separate image; never the raw payload.
             let factor = crop.width.max(crop.height).div_ceil(512);
             let pw = crop.width.div_ceil(factor);
             let ph = crop.height.div_ceil(factor);
-            let mut rgb = Vec::with_capacity(pw * ph * 3);
-            for y in 0..ph {
-                for x in 0..pw {
-                    let offset = ((crop.y + y * factor) * image.width + crop.x + x * factor) * 3;
-                    rgb.extend_from_slice(&image.rgb[offset..offset + 3]);
+            let mut rgb = vec![0.0; pw * ph * 3];
+            let mut offsets = Vec::new();
+            let mut byte_counts = Vec::new();
+            let total = image_height.div_ceil(options.strip_rows);
+            // A scratch directory exposes bounded payload writes; it is not an
+            // image IFD and is never linked into the file's directory graph.
+            let mut payload = encoder.extra_directory()?;
+            for (index, y) in (0..image_height).step_by(options.strip_rows).enumerate() {
+                let rows = options.strip_rows.min(image_height - y);
+                let tile = stats.pull(
+                    source,
+                    Region {
+                        x: 0,
+                        y,
+                        width: image_width,
+                        height: rows,
+                    },
+                )?;
+                // Accumulate the original nearest-sample preview from pixels
+                // already reconstructed, without additional source evaluations.
+                for py in 0..ph {
+                    let sy = crop.y + py * factor;
+                    if sy >= y && sy < y + rows {
+                        for px in 0..pw {
+                            let from = ((sy - y) * image_width + crop.x + px * factor) * 3;
+                            let to = (py * pw + px) * 3;
+                            rgb[to..to + 3].copy_from_slice(&tile.image.rgb[from..from + 3]);
+                        }
+                    }
                 }
+                let encode_start = Instant::now();
+                let (offset, size) = super::output::write_payload(
+                    &mut payload,
+                    bytemuck::cast_slice(&tile.image.rgb),
+                    options.compression,
+                )?;
+                offsets.push(offset);
+                byte_counts.push(size);
+                stats.encode_write_seconds += encode_start.elapsed().as_secs_f64();
+                progress(index + 1, total)?;
             }
+            payload.finish()?;
+            let preview_start = Instant::now();
             let preview = render_srgb(
                 &Image {
                     width: pw,
@@ -162,9 +208,31 @@ pub fn write_dng(path: &Path, image: &Image, color: &Color) -> Result<()> {
                 &include_bytes!("../assets/srgb.icc")[..],
             )?;
             let preview_ifd = thumb.finish_with_offsets()?.offset;
-            let mut raw = encoder.new_image::<colortype::RGB32Float>(width, height)?;
-            raw.rows_per_strip(32)?;
-            let tags = raw.encoder();
+            stats.preview_seconds += preview_start.elapsed().as_secs_f64();
+            let mut directory = encoder.image_directory()?;
+            let tags = &mut directory;
+            for (tag, value) in [
+                (Tag::ImageWidth, width),
+                (Tag::ImageLength, height),
+                (Tag::RowsPerStrip, options.strip_rows as u32),
+            ] {
+                write_aligned_tag(tags, tag, value)?;
+            }
+            write_aligned_tag(tags, Tag::SamplesPerPixel, 3u16)?;
+            write_aligned_tag(tags, Tag::PlanarConfiguration, 1u16)?;
+            write_aligned_tag(tags, Tag::BitsPerSample, &[32u16, 32, 32][..])?;
+            write_aligned_tag(tags, Tag::SampleFormat, &[3u16, 3, 3][..])?;
+            write_aligned_tag(
+                tags,
+                Tag::Compression,
+                if options.compression == OutputCompression::Lossless {
+                    8u16
+                } else {
+                    1u16
+                },
+            )?;
+            write_aligned_tag(tags, Tag::StripOffsets, &offsets[..])?;
+            write_aligned_tag(tags, Tag::StripByteCounts, &byte_counts[..])?;
             write_aligned_tag(tags, Tag::SubIfd, preview_ifd)?;
             // RGB32Float defines the storage layout only. 34892 declares the
             // camera-linear raw interpretation; no RGB/ICC transfer is implied.
@@ -237,16 +305,15 @@ pub fn write_dng(path: &Path, image: &Image, color: &Color) -> Result<()> {
             write_aligned_tag(tags, Tag::Unknown(50730), signed(0.0)?)?; // no arbitrary exposure shift
             write_aligned_tag(tags, Tag::Unknown(50731), rational(1.0)?)?;
             write_aligned_tag(tags, Tag::Unknown(50732), rational(1.0)?)?;
-            for strip in image.rgb.chunks(image.width * 3 * 32) {
-                raw.write_strip(strip)?;
-            }
-            raw.finish()?;
+            directory.finish()?;
         }
         writer.flush()?;
     }
     temporary.as_file().sync_all()?;
+    stats.output_bytes = temporary.as_file().metadata()?.len();
     temporary.persist_noclobber(path).map_err(|e| e.error)?;
-    Ok(())
+    stats.total_seconds = started.elapsed().as_secs_f64();
+    Ok(stats)
 }
 
 pub struct DngWriter;
@@ -299,7 +366,17 @@ mod tests {
             rgb: (0..96 * 70 * 3).map(|i| values[i % values.len()]).collect(),
         };
         let color = color();
-        write_dng(&path, &image, &color).unwrap();
+        write_dng_from_source(
+            &path,
+            &image,
+            &color,
+            WriteOptions {
+                compression: OutputCompression::None,
+                ..WriteOptions::default()
+            },
+            &mut |_, _| Ok(()),
+        )
+        .unwrap();
         let raw = rawler::decode_file(&path).unwrap();
         assert_eq!((raw.width, raw.height, raw.cpp), (96, 70, 3));
         assert_eq!(raw.orientation.to_u16(), 6);
@@ -369,7 +446,17 @@ mod tests {
             height: 70,
             rgb: vec![0.18; 96 * 70 * 3],
         };
-        write_dng(&path, &image, &color).unwrap();
+        write_dng_from_source(
+            &path,
+            &image,
+            &color,
+            WriteOptions {
+                compression: OutputCompression::None,
+                ..WriteOptions::default()
+            },
+            &mut |_, _| Ok(()),
+        )
+        .unwrap();
         let parsed =
             GenericTiffReader::new(&mut File::open(&path).unwrap(), 0, 0, Some(4), &[]).unwrap();
         let root = parsed.root_ifd();

@@ -30,6 +30,11 @@ function M.checkInfo(info, manifest)
     for _, format in ipairs(info.output_formats or {}) do
         if format == 'dng' then supportsDng = true end
     end
+    local supportsLossless = false
+    for _, compression in ipairs(info.output_compressions or {}) do
+        if compression == 'lossless' then supportsLossless = true end
+    end
+    assert(info.streamed_output == true and supportsLossless, 'This engine lacks streamed lossless output. Reinstall the complete current plugin package.')
     assert(supportsDng, 'This engine cannot write DNG. Reinstall the complete current plugin package.')
     assert(info.autodetection == true, 'This engine does not support automatic capture detection. Reinstall the complete current plugin package.')
 end

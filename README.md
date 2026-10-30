@@ -29,11 +29,11 @@ without changing your library filters or current collection. A separate menu
 handles RAW burst denoise. Failed jobs and diagnostic logs remain beside the
 output for troubleshooting.
 
-Start with four shots; sixteen shots still use the original high-memory engine.
+Start with four shots; sixteen-shot sources still require several GB of RAM.
 The plugin now outputs experimental linear DNG. Adaptive Color/B&W and AI Denoise
-compatibility need Lightroom host testing. Tiled reconstruction is still pending.
-The uncompressed files are large: about 0.73 GB for four-shot 61 MP or 2.9 GB for
-sixteen-shot 244 MP, before small metadata/preview overhead.
+compatibility need Lightroom host testing. Output reconstruction now streams bounded regions; packed/disk-backed input storage is still pending.
+Lossless Deflate compression is now the default. Uncompressed equivalents are
+about 0.73 GB at 61 MP or 2.9 GB at 244 MP; compressed size depends on content.
 
 ## Build and run
 
@@ -102,7 +102,7 @@ the decoder.
 ## Implemented and next
 
 See [ROADMAP.md](ROADMAP.md) for prioritized follow-ups and acceptance criteria,
-including capture auto-detection, other Sony models, memory preferences and DNG.
+including other Sony models, memory budgets, motion reconstruction and DNG validation.
 
 - `pixelshift-core`: camera profile seam, Bayer sample reconstruction, 4-shot full
   color, 16-shot half-pixel interleaving, sensor-domain averaging, integer residual
@@ -117,17 +117,17 @@ including capture auto-detection, other Sony models, memory preferences and DNG.
   import, persistent diagnostics and mocked SDK workflow checks.
 
 Next: real a7CR validation, tiled processing / memory budgets, subpixel alignment
-and spatial motion masks, plus Lightroom validation of **linear DNG** and
-lossless compression. Other cameras and pixel-shift formats get new profiles/decoders; none
+and spatial motion masks, plus Lightroom validation of compressed **linear DNG**. Other cameras and pixel-shift formats get new profiles/decoders; none
 are implemented now. Denoising a single Pixel Shift sequence only averages
 redundant same-color observations (principally green); it cannot provide a
 16-frame noise reduction gain for every RGB channel. Ordinary burst denoise
 averages all aligned frames before color rendering.
 
-The prototype keeps all decoded frames and the RGB result in memory. A 61 MP
-16-shot capture requires roughly 7–10 GB including render buffers and decoder
-overhead; use a 16 GB+ machine and expect a slow first implementation. It has no
-out-of-core path or production performance claim. TIFF is classic TIFF, RGB16
+The CLI keeps decoded float32 source frames in RAM and streams output regions
+without a full reconstructed RGB buffer. Sixteen 61 MP sources alone occupy
+about 3.9 GB, plus decoder/allocator working memory. Packed/disk-backed sources
+and an enforced global memory budget remain pending; full-size peak memory is
+not yet measured. See [streaming and measurements](docs/streaming.md). TIFF is classic TIFF, RGB16
 with sRGB transfer and ICC profile; highlights are clipped, with no tone mapping.
 The merged buffer excludes a border of `4 + alignment_radius` sensor pixels on
 all sides. DNG DefaultCrop additionally maps the source decoder's preferred crop
@@ -144,8 +144,9 @@ Adobe camera profiles, tone curves, lens corrections or source Lightroom edits,
 so its appearance can differ from the ARWs. Linear DNG preserves scene-linear
 camera RGB, reciprocal as-shot WB, A/D65 matrices where available, black/white levels, orientation,
 output crop and standard source EXIF. Only its small preview is developed to sRGB.
-It streams float32 strips without a second full-image render buffer and releases
-source frames before writing; the merger itself still holds whole images.
+It reconstructs bounded regions directly into lossless float32 strips and
+collects a small preview from those pixels. TIFF is streamed similarly. Sources
+remain in RAM until reconstruction and writing finish.
 Use a `.tif`/`.tiff` output path in CLI jobs for the existing TIFF renderer.
 Adaptive profile, AI Denoise and lens-correction compatibility must be tested in
 Lightroom. DNG does not contain copied Sony MakerNotes or correction opcodes.

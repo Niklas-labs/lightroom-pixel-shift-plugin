@@ -75,6 +75,7 @@ def smoke_test(archive, expected_platform, expected_machine=None):
         assert info['protocol_version'] == manifest['protocol_version'] == 1
         assert info['engine_version'] == manifest['engine_version']
         assert 'dng' in info['output_formats']
+        assert info['streamed_output'] and 'lossless' in info['output_compressions']
         assert info['metadata_backend'] == manifest['metadata_backend']
         assert info['camera_profile_schema_version'] == 1
         assert info['camera_models'] == [c['model'] for c in load_yaml((plugin / 'config' / 'camera-profiles.yaml').read_text(encoding='utf-8'))['cameras']]
@@ -98,6 +99,10 @@ def smoke_test(archive, expected_platform, expected_machine=None):
                                     '--result', result_file, '--log', log_file], env, check=True)
         report = json.loads(merged.stdout)
         assert report['status'] == 'complete'
+        assert report['execution']['streamed_output']
+        assert report['execution']['compression'] == 'lossless'
+        assert report['execution']['peak_output_region_bytes'] <= 112*32*3*4
+        assert report['execution']['resources']['peak_resident_bytes'] > 0
         assert json.loads(result_file.read_text(encoding='utf-8')) == report
         log = log_file.read_text(encoding='utf-8')
         assert log.startswith(header) and 'decode 1/16' in log and 'complete in' in log

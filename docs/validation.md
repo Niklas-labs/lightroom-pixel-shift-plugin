@@ -108,3 +108,16 @@ metatables. A negative check removes `PixelShiftProgress.lua` and requires the
 loader gate to fail. Run package units with `PIXELSHIFT_TEST_LUA` pointing to Lua
 5.1; CI installs Lua and sets this explicitly. This catches missing packaged
 modules and unsupported global dependencies, not all Lightroom host behaviors.
+
+## Streamed output gates
+
+Compare whole-image fixture reference versus irregular regions, worker counts,
+compression modes and strip sizes using exact float bits. Include localized
+motion/fallback and partial edge regions. Validate compressed/uncompressed DNG in
+independent readers and Adobe tooling, plus rendered TIFF roundtrips. Inject late
+region/progress errors and confirm no final or temporary file remains.
+
+Performance assertions are structural (maximum region size, no repeated preview
+reconstruction); OS RSS/time comparisons are recorded benchmarks, not flaky CI
+thresholds. See [streaming](streaming.md). Full-size source-memory and Lightroom
+compressed-output acceptance remain required.

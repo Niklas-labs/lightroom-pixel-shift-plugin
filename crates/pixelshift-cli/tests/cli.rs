@@ -269,3 +269,57 @@ fn all_merge_modes_write_dng_and_reject_overwrite() {
         assert!(!dir.path().join("result.tif").exists());
     }
 }
+
+#[test]
+fn streamed_execution_reports_bounds_resources_and_validates_options() {
+    let (dir, job) = setup("sixteen");
+    let mut spec: serde_json::Value = serde_json::from_slice(&fs::read(&job).unwrap()).unwrap();
+    spec["strip_rows"] = json!(7);
+    spec["compression"] = json!("none");
+    spec["output"] = json!("streamed.dng");
+    fs::write(&job, serde_json::to_vec(&spec).unwrap()).unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_sony-pixelshift"))
+        .args(["merge", "--fixtures", "--job"])
+        .arg(&job)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let record: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let execution = &record["execution"];
+    assert_eq!(execution["streamed_output"], true);
+    assert_eq!(execution["source_storage"], "normalized_f32_ram");
+    assert_eq!(execution["peak_output_region_bytes"], 48 * 7 * 3 * 4);
+    assert_eq!(execution["timings"]["output"]["regions"], 5);
+    assert!(
+        execution["resources"]["peak_resident_bytes"]
+            .as_u64()
+            .unwrap()
+            > 0
+    );
+    for (compression, rows) in [("lossy", 7), ("lossless", 0), ("lossless", 257)] {
+        spec["output"] = json!("invalid.dng");
+        spec["compression"] = json!(compression);
+        spec["strip_rows"] = json!(rows);
+        fs::write(&job, serde_json::to_vec(&spec).unwrap()).unwrap();
+        let failed = Command::new(env!("CARGO_BIN_EXE_sony-pixelshift"))
+            .args(["merge", "--fixtures", "--job"])
+            .arg(&job)
+            .output()
+            .unwrap();
+        assert!(!failed.status.success());
+        assert!(!dir.path().join("invalid.dng").exists());
+    }
+    assert!(
+        !Command::new(env!("CARGO_BIN_EXE_sony-pixelshift"))
+            .args(["merge", "--reference", "--job"])
+            .arg(&job)
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+}

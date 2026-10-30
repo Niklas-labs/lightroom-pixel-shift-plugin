@@ -18,3 +18,9 @@ clap = { version = "4", features = ["derive"] }
 serde-saphyr = { version = "=2.0.0", default-features = false, features = ["serialize", "deserialize"] }
 tempfile = "3"
 tiff = "0.10"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_System_ProcessStatus", "Win32_System_Threading"] }

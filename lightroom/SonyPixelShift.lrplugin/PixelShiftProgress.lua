@@ -8,6 +8,13 @@ function M.new(scope, count, tasks)
         self.scope:setCaption(caption)
     end
     function self:line(line)
+        local region,total=line:match('^output region (%d+)/(%d+)$')
+        region,total=tonumber(region),tonumber(total)
+        if region and total and total>0 and total<=1000000 and region>=1 and region<=total then
+            self.scope:setPortionComplete(region,total+1) -- Reserve completion for catalog import.
+            self.scope:setCaption('Combining and saving ' .. region .. ' of ' .. total)
+            return
+        end
         local index, count = line:match('^decode (%d+)/(%d+): ')
         index, count = tonumber(index), tonumber(count)
         if index and count == self.count and index >= 1 and index <= count then
