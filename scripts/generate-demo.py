@@ -51,6 +51,7 @@ for index in range(16):
         "frame": {"width": 64, "height": 48, "pixels": pixels, "cfa": [0, 1, 1, 2],
                   "model": "ILCE-7CR", "sequence": index+1},
         "color": {"white_balance": [1, 1, 1],
+                  "xyz_to_camera_a": [0.9185, -0.4857, 0.0505, -0.3651, 1.1061, 0.2982, -0.0161, 0.0698, 0.6769],
                   "xyz_to_camera": [0.82, -0.2976, -0.0719, -0.4296, 1.2053, 0.2532,
                                     -0.0429, 0.1282, 0.5774]}}))
 (root / "job.json").write_text(json.dumps({"version": 1, "camera": "auto", "mode": "auto",

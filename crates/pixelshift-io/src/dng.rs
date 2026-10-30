@@ -76,6 +76,13 @@ pub fn write_dng(path: &Path, image: &Image, color: &Color) -> Result<()> {
         .map(signed)
         .into_iter()
         .collect::<Result<Vec<_>>>()?;
+    let matrix_a = color
+        .xyz_to_camera_a
+        .map(|matrix| -> Result<Vec<SRational>> {
+            super::inverse(matrix)?;
+            matrix.map(signed).into_iter().collect::<Result<Vec<_>>>()
+        })
+        .transpose()?;
     let neutral = color
         .white_balance
         .map(|v| rational(color.white_balance[1] / v))
@@ -191,8 +198,17 @@ pub fn write_dng(path: &Path, image: &Image, color: &Color) -> Result<()> {
                 model
             );
             write_aligned_tag(tags, Tag::Unknown(50708), unique.as_str())?;
-            write_aligned_tag(tags, Tag::Unknown(50721), &matrix[..])?; // XYZ -> camera, NOT inverse
-            write_aligned_tag(tags, Tag::Unknown(50778), 21u16)?; // D65
+            // Keep original, unnormalized XYZ -> camera matrices. Slot 1 is
+            // tungsten A and slot 2 is daylight D65 when both are available.
+            if let Some(matrix_a) = &matrix_a {
+                write_aligned_tag(tags, Tag::Unknown(50721), &matrix_a[..])?;
+                write_aligned_tag(tags, Tag::Unknown(50778), 17u16)?;
+                write_aligned_tag(tags, Tag::Unknown(50722), &matrix[..])?;
+                write_aligned_tag(tags, Tag::Unknown(50779), 21u16)?;
+            } else {
+                write_aligned_tag(tags, Tag::Unknown(50721), &matrix[..])?;
+                write_aligned_tag(tags, Tag::Unknown(50778), 21u16)?;
+            }
             write_aligned_tag(tags, Tag::Unknown(50728), &neutral[..])?; // reciprocal WB
             write_aligned_tag(tags, Tag::Unknown(50713), &[1u16, 1][..])?;
             // TIFF Rational is not Copy; write the three channel black levels explicitly.
@@ -251,6 +267,7 @@ mod tests {
     use std::fs::{self, File};
     fn color() -> Color {
         Color {
+            xyz_to_camera_a: None,
             default_crop: Some(super::super::Crop {
                 x: 2,
                 y: 3,
@@ -337,6 +354,55 @@ mod tests {
         let original = fs::read(&path).unwrap();
         assert!(write_dng(&path, &image, &color).is_err());
         assert_eq!(fs::read(&path).unwrap(), original);
+    }
+    #[test]
+    fn dual_illuminant_tags_preserve_white_balance_samples_and_exposure() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("dual.dng");
+        let mut color = color();
+        let matrix_a = [
+            0.9185, -0.4857, 0.0505, -0.3651, 1.1061, 0.2982, -0.0161, 0.0698, 0.6769,
+        ];
+        color.xyz_to_camera_a = Some(matrix_a);
+        let image = Image {
+            width: 96,
+            height: 70,
+            rgb: vec![0.18; 96 * 70 * 3],
+        };
+        write_dng(&path, &image, &color).unwrap();
+        let parsed =
+            GenericTiffReader::new(&mut File::open(&path).unwrap(), 0, 0, Some(4), &[]).unwrap();
+        let root = parsed.root_ifd();
+        assert_eq!(root.get_entry(50778u16).unwrap().force_u16(0), 17);
+        assert_eq!(root.get_entry(50779u16).unwrap().force_u16(0), 21);
+        for (tag, matrix) in [(50721u16, matrix_a), (50722u16, color.xyz_to_camera)] {
+            for (index, value) in matrix.iter().enumerate() {
+                assert!((root.get_entry(tag).unwrap().force_f32(index) - value).abs() < 0.00001);
+            }
+        }
+        for (index, value) in [0.5, 1.0, 2.0 / 3.0].iter().enumerate() {
+            assert!((root.get_entry(50728u16).unwrap().force_f32(index) - value).abs() < 0.00001);
+        }
+        assert_eq!(root.get_entry(50730u16).unwrap().force_f32(0), 0.0);
+        let raw = rawler::decode_file(&path).unwrap();
+        assert!(
+            raw.camera
+                .color_matrix
+                .contains_key(&rawler::imgop::xyz::Illuminant::A)
+        );
+        assert!(
+            raw.camera
+                .color_matrix
+                .contains_key(&rawler::imgop::xyz::Illuminant::D65)
+        );
+        match raw.data {
+            RawImageData::Float(samples) => assert_eq!(samples, image.rgb),
+            _ => panic!("expected float RAW"),
+        }
+        let bad = temp.path().join("invalid-dual.dng");
+        color.xyz_to_camera_a = Some([0.0; 9]);
+        assert!(write_dng(&bad, &image, &color).is_err());
+        assert!(!bad.exists());
     }
     #[test]
     fn invalid_dng_data_never_publishes_a_file() {

@@ -135,7 +135,11 @@ real TIFF testing has exposed Adobe profile and RAW editing limitations.
   Initial real four-shot feedback reports a slightly darker DNG and softer detail
   with AI Denoise off on both and matched Detail settings. Diagnose alignment,
   reconstruction, baseline exposure and profile interpretation; don't add an
-  arbitrary contrast/sharpening/exposure correction.
+  arbitrary contrast/sharpening/exposure correction. Later screenshots confirm
+  both Adobe Color / As Shot / Exposure 0.00; DNG WB is 6350 K/+18 versus ARW
+  5850 K/+15. Dual-illuminant A/D65 output is implemented as a calibration
+  improvement, without changing WB gains, raw samples or baseline exposure;
+  its actual Lightroom rendering remains to verify.
 - [ ] Inherit the reference photo's lens-correction enable preference for a
   compatible merged DNG. Initial feedback required manually enabling the
   correctly preselected lens profile. Keep this separate from copying source
@@ -144,6 +148,7 @@ real TIFF testing has exposed Adobe profile and RAW editing limitations.
   Initial 9588×6364 DNG exposed more of the decoded buffer. Preserve the actual
   source crop and common valid intersection, accounting for shift and 16-shot
   scale; do not hardcode a centered crop or promise identical edge coverage.
+  User confirms correct output size on the initial macOS four-shot retest.
 
 - [x] Prove an initial strip writer using the TIFF library, preserving linear
   samples without a second full-image output allocation. The existing merger
@@ -196,7 +201,8 @@ dispatch only after profiling, while keeping distributed binaries compatible.
   diagnostics while the helper runs in a separate SDK task; verify in Lightroom.
 - [ ] Add safe cooperative cancellation and finer engine progress. Account for
   cancellation latency during a whole-frame upstream decode; the current scope
-  disables cancellation rather than pretending it can stop the engine.
+  disables cancellation rather than pretending it can stop the engine. The user
+  confirms the progress build works on the initial macOS installation.
 - [ ] Expose validated output and resource preferences in the plugin UI and
   version the engine/job protocol accordingly.
 - [ ] Sign the macOS helper with a Developer ID Application certificate, hardened

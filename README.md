@@ -142,7 +142,7 @@ do not select an unrelated lens to compensate. Lens identity stored only in
 proprietary Sony tags still needs a resolver. The TIFF renderer does not apply
 Adobe camera profiles, tone curves, lens corrections or source Lightroom edits,
 so its appearance can differ from the ARWs. Linear DNG preserves scene-linear
-camera RGB, reciprocal as-shot WB, a D65 matrix, black/white levels, orientation,
+camera RGB, reciprocal as-shot WB, A/D65 matrices where available, black/white levels, orientation,
 output crop and standard source EXIF. Only its small preview is developed to sRGB.
 It streams float32 strips without a second full-image render buffer and releases
 source frames before writing; the merger itself still holds whole images.

@@ -42,8 +42,8 @@ dual-illuminant interpolation, lens correction or highlight recovery. ICC is
 embedded. A whitelist of standard camera/lens/exposure metadata is preserved; private
 MakerNotes, GPS, serials and geometry-dependent correction tags are omitted.
 
-The DNG writer stores camera-space float32 **linear DNG 1.4**, with a single
-D65 matrix, as-shot neutral, black/white semantics, crop, orientation, standard
+The DNG writer stores camera-space float32 **linear DNG 1.4**, with dual A/D65
+catalog matrices when available (single-D65 fallback), as-shot neutral, black/white semantics, crop, orientation, standard
 EXIF and a bounded sRGB preview SubIFD. Main RGB is not gamma encoded or white
 balanced. Uncompressed strips borrow the merged RGB buffer; sources are released
 before output. This bounds writer overhead but does not fix the whole-image

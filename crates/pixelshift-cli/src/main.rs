@@ -248,6 +248,15 @@ fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
                 .photo_metadata
                 .make
                 .get_or_insert_with(|| "SONY".into());
+            diagnostics.record(format!(
+                "color calibration: {}; as-shot WB gains: {:?}; DNG baseline exposure: 0 EV",
+                if color.xyz_to_camera_a.is_some() {
+                    "dual illuminant A + D65"
+                } else {
+                    "single illuminant D65"
+                },
+                color.white_balance
+            ))?;
             let frames = decoded.into_iter().map(|d| d.frame).collect::<Vec<_>>();
             diagnostics.record("merge and motion correction")?;
             let (image, report) = merge(

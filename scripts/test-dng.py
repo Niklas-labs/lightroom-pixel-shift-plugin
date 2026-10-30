@@ -48,6 +48,12 @@ def check(engine):
                 assert 'ICCProfile' not in raw.tags
                 assert 'CFARepeatPatternDim' not in raw.tags
                 np.testing.assert_allclose(raw.asarray(), np.broadcast_to(expected, raw.shape), rtol=0, atol=1e-6)
+                assert raw.tags['CalibrationIlluminant1'].value == 17
+                assert raw.tags['CalibrationIlluminant2'].value == 21
+                for tag, matrix in [('ColorMatrix1', frame['color']['xyz_to_camera_a']), ('ColorMatrix2', frame['color']['xyz_to_camera'])]:
+                    values = raw.tags[tag].value
+                    np.testing.assert_allclose([values[i]/values[i+1] for i in range(0,18,2)],matrix,rtol=0,atol=1e-6)
+                assert raw.tags['BaselineExposure'].value == (0,1000000)
                 neutral = raw.tags['AsShotNeutral'].value
                 np.testing.assert_allclose([neutral[i]/neutral[i+1] for i in range(0,6,2)], [0.5,1,2/3], atol=1e-6)
                 assert preview.shape[-1] == 3 and max(preview.shape[:2]) <= 512
@@ -76,6 +82,23 @@ def check(engine):
                 assert raw.pages[0].shape == (32*scale,48*scale,3)
                 np.testing.assert_allclose(raw.asarray(),np.broadcast_to(expected,raw.shape),rtol=0,atol=1e-6)
             print(f'{mode}: source crop mapping and cropped preview checks passed')
+
+        # A decoder without illuminant A must retain valid single-D65 output.
+        for name in job['inputs']:
+            path = root / name
+            frame = json.loads(path.read_text())
+            frame['color']['xyz_to_camera_a'] = None
+            path.write_text(json.dumps(frame))
+        spec = dict(job, mode='four', output='single-d65.dng', inputs=job['inputs'][:4])
+        path = root / 'single-job.json'
+        path.write_text(json.dumps(spec))
+        subprocess.run([str(engine), 'merge', '--fixtures', '--job', str(path)],check=True,capture_output=True)
+        with tifffile.TiffFile(root / spec['output']) as dng:
+            raw = dng.pages[0]
+            assert raw.tags['CalibrationIlluminant1'].value == 21
+            assert 'ColorMatrix2' not in raw.tags and 'CalibrationIlluminant2' not in raw.tags
+            np.testing.assert_allclose(raw.asarray(),np.broadcast_to(expected,raw.shape),rtol=0,atol=1e-6)
+        print('single-D65 fallback: calibration and unmodified sample checks passed')
 
 
 if __name__ == '__main__':

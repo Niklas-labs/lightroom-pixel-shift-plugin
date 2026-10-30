@@ -14,9 +14,12 @@ Menu commands are registered under **Library → Plug-in Extras** only.
   negative noise and values above nominal white. BlackLevel is zero and WhiteLevel
   is one per channel. No WB, gamma, display matrix, tone curve or Lightroom edits
   are baked into this image. No fabricated CFA tags are written.
-- Original XYZ-to-camera D65 ColorMatrix1 and CalibrationIlluminant1, with
-  reciprocal green-normalized as-shot WB. This is a single-illuminant catalog
-  calibration; it does not claim to reproduce Adobe's camera profile.
+- Original XYZ-to-camera matrices for illuminant A (tungsten, slot 1) and D65
+  (daylight, slot 2), when both exist in rawler's camera catalog. Otherwise retain
+  single-D65 slot 1. Reciprocal green-normalized as-shot WB remains unchanged.
+  These are catalog calibrations, not a claim of identical Adobe ARW rendering.
+  The small preview/TIFF renderer still uses D65 only; compare Lightroom Develop
+  rendering, rather than an embedded thumbnail, for the calibration test.
 - Original camera/lens/exposure EXIF when available, orientation, software and
   experimental merge description. UniqueCameraModel uses the camera identity;
   no Adobe profile, Sony MakerNote, serial, GPS or lens-correction opcode is copied.
@@ -89,3 +92,19 @@ softer detail were reported with AI Denoise off on both and matched Detail
 settings. Investigate registration/reconstruction and exposure/profile metadata;
 do not compensate with arbitrary sharpening or exposure boosts. The screenshot
 shows f/22, which affects both files and cannot explain their difference by itself.
+
+## Exposure and white-balance comparison
+
+The user confirmed the corrected output size and native Lightroom progress UI
+work on the tested macOS installation. Subsequent screenshots show Adobe Color,
+As Shot WB and Exposure 0.00 on both images: merged DNG 6350 K / +18 tint, source
+ARW 5850 K / +15 tint, with uniform slight darkening reported. This rules out an
+Exposure-slider mismatch for that comparison. Matching profile names and zero
+sliders still do not establish identical camera calibration or default rendering.
+
+The initial writer carried D65 only. The follow-up preserves both illuminant A
+and D65 when available, while leaving samples, as-shot sensor gains and baseline
+exposure (0 EV) unchanged. Independent/tag/Adobe validation passes; actual Lightroom
+WB numbers, color and brightness remain to verify. Different As Shot temperature/
+tint numbers alone do not prove an incorrect sensor white balance; do not force
+matching displayed values or add a camera exposure offset without measurement.

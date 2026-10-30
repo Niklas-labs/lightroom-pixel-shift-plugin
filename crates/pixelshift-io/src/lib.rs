@@ -76,6 +76,10 @@ pub struct Color {
     pub white_balance: [f32; 3],
     /// XYZ D65 to camera, row major.
     pub xyz_to_camera: [f32; 9],
+    /// Optional XYZ -> camera calibration under standard illuminant A (tungsten).
+    /// DNG uses this alongside D65 for illuminant interpolation.
+    #[serde(default)]
+    pub xyz_to_camera_a: Option<[f32; 9]>,
     #[serde(default = "normal_orientation")]
     pub orientation: u16,
 }
@@ -181,13 +185,25 @@ pub fn decode(path: &Path, fixture: bool) -> Result<Decoded> {
             (v as f32 - black[phase]) / (white[phase] - black[phase])
         })
         .collect();
-    // Rawler's camera catalog matrices are XYZ -> camera. Select D65 explicitly.
+    // Rawler matrices are XYZ -> camera. Keep D65 for rendering and include
+    // illuminant A, when available, for dual-illuminant DNG interpolation.
     let matrix = raw
         .camera
         .color_matrix
         .get(&rawler::imgop::xyz::Illuminant::D65)
         .context("missing D65 camera matrix")?;
     ensure!(matrix.len() == 9, "expected 3x3 camera matrix");
+    let xyz_to_camera_a = raw
+        .camera
+        .color_matrix
+        .get(&rawler::imgop::xyz::Illuminant::A)
+        .map(|matrix| {
+            matrix
+                .clone()
+                .try_into()
+                .map_err(|_| anyhow::anyhow!("expected 3x3 illuminant A camera matrix"))
+        })
+        .transpose()?;
     let source_crop = raw.crop_area.or(raw.active_area).map(|area| Crop {
         x: area.p.x,
         y: area.p.y,
@@ -199,6 +215,7 @@ pub fn decode(path: &Path, fixture: bool) -> Result<Decoded> {
     }
     let color = Color {
         default_crop: None,
+        xyz_to_camera_a,
         photo_metadata: capture.photo_metadata.clone(),
         orientation: raw.orientation.to_u16(),
         white_balance: [raw.wb_coeffs[0], raw.wb_coeffs[1], raw.wb_coeffs[2]],
@@ -458,6 +475,7 @@ mod tests {
     use super::*;
     fn calibration() -> Color {
         Color {
+            xyz_to_camera_a: None,
             default_crop: None,
             photo_metadata: PhotoMetadata::default(),
             white_balance: [1.0; 3],
