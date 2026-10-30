@@ -69,6 +69,15 @@ The denoise menu operates on ordinary RAW bursts. Initial Sony metadata coverage
 and real-camera validation are experimental; a failed capture should produce a
 clear error and a diagnostic log rather than silently guessing a frame layout.
 
+## Missing menu commands
+
+Commands are registered in both **File → Plug-in Extras** and
+**Library → Plug-in Extras**. Older builds registered only the Library menu,
+so the File menu could show “none defined”. In Plug-in Manager, select the actual
+`SonyPixelShift.lrplugin` folder, enable it and reload after replacing a build.
+If the Library menu is also empty, check the plugin status/error in Plug-in
+Manager; this occurs before launching the Rust helper.
+
 ## Reporting a failure
 
 Keep the engine log path and error shown by the plugin. Report the plugin build

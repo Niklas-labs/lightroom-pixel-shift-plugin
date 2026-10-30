@@ -29,6 +29,13 @@ engine.checkInfo({protocol_version=1, engine_version='0.1.0',camera_models={'ILC
 assert(not pcall(engine.checkManifest, {protocol_version=2,engine_version='0.1.0'}))
 assert(not pcall(engine.checkInfo, {protocol_version=1,engine_version='9.0',camera_models={'ILCE-7CR'},autodetection=true}, manifest))
 local info = dofile('lightroom/SonyPixelShift.lrplugin/Info.lua')
-assert(#info.LrLibraryMenuItems == 2)
+assert(#info.LrLibraryMenuItems == 2 and #info.LrExportMenuItems == 2)
+for _, menu in ipairs({info.LrLibraryMenuItems, info.LrExportMenuItems}) do
+    for _, item in ipairs(menu) do
+        assert(type(item.title) == 'string' and #item.title > 0)
+        local file = assert(io.open('lightroom/SonyPixelShift.lrplugin/' .. item.file, 'rb'))
+        file:close()
+    end
+end
 print('Plugin protocol checks passed')
 dofile('scripts/test-plugin-workflow.lua')
