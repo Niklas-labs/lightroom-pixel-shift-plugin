@@ -9,6 +9,9 @@ use std::{
 };
 use tiff::encoder::{TiffEncoder, colortype};
 
+mod dng;
+pub use dng::{DngWriter, write_dng};
+
 mod metadata;
 pub mod profiles;
 pub use metadata::{PixelShiftInfo, inspect_capture, metadata_backend};
@@ -276,12 +279,81 @@ pub fn render_srgb(image: &Image, color: &Color) -> Result<Vec<u16>> {
     Ok(output)
 }
 
+/// TIFF/DNG requires out-of-line values at word-aligned offsets. The TIFF
+/// encoder currently leaves consecutive ASCII payloads unpadded.
+fn write_aligned_tag<W: Write + std::io::Seek, T: tiff::encoder::TiffValue>(
+    directory: &mut tiff::encoder::DirectoryEncoder<'_, W, tiff::encoder::TiffKindStandard>,
+    tag: tiff::tags::Tag,
+    value: T,
+) -> Result<()> {
+    if directory.write_data(&[] as &[u8])? % 2 != 0 {
+        directory.write_data(&[0u8][..])?;
+    }
+    directory.write_tag(tag, value)?;
+    Ok(())
+}
+
+/// Shared, whitelisted EXIF. DNG camera channels are uncalibrated (65535),
+/// whereas rendered TIFF explicitly carries sRGB (1).
+fn write_exif<W: Write + std::io::Seek>(
+    encoder: &mut TiffEncoder<W>,
+    metadata: &PhotoMetadata,
+    color_space: u16,
+) -> Result<u32> {
+    let mut exif = encoder.extra_directory()?;
+    let rational = |v: rawler::formats::tiff::Rational| tiff::encoder::Rational { n: v.n, d: v.d };
+    for (tag, value) in [
+        (0x829a, metadata.exposure_time),
+        (0x829d, metadata.fnumber),
+        (0x920a, metadata.focal_length),
+    ] {
+        if let Some(value) = value.filter(|v| v.d != 0) {
+            write_aligned_tag(&mut exif, tiff::tags::Tag::Unknown(tag), rational(value))?;
+        }
+    }
+    if let Some(values) = metadata
+        .lens_spec
+        .filter(|values| values.iter().all(|v| v.d != 0))
+    {
+        write_aligned_tag(
+            &mut exif,
+            tiff::tags::Tag::Unknown(0xa432),
+            &values.map(rational)[..],
+        )?;
+    }
+    for (tag, value) in [
+        (0xa433, &metadata.lens_make),
+        (0xa434, &metadata.lens_model),
+        (0x9003, &metadata.date_time_original),
+    ] {
+        if let Some(value) = value {
+            write_aligned_tag(&mut exif, tiff::tags::Tag::Unknown(tag), value.as_str())?;
+        }
+    }
+    if let Some(iso) = metadata.iso {
+        write_aligned_tag(
+            &mut exif,
+            tiff::tags::Tag::Unknown(0x8827),
+            iso.min(u16::MAX as u32) as u16,
+        )?;
+        if iso >= u16::MAX as u32 {
+            write_aligned_tag(&mut exif, tiff::tags::Tag::Unknown(0x8830), 3u16)?;
+            write_aligned_tag(&mut exif, tiff::tags::Tag::Unknown(0x8833), iso)?;
+        }
+    }
+    write_aligned_tag(&mut exif, tiff::tags::Tag::Unknown(0xa001), color_space)?;
+    if exif.write_data(&[] as &[u8])? % 2 != 0 {
+        exif.write_data(&[0u8][..])?;
+    }
+    Ok(exif.finish_with_offsets()?.offset)
+}
+
 /// Same-directory temporary file + no-clobber publication. Never modifies a source file.
 pub fn write_tiff(path: &Path, image: &Image, color: &Color) -> Result<()> {
     ensure!(
         path.extension()
             .is_some_and(|e| e.eq_ignore_ascii_case("tif") || e.eq_ignore_ascii_case("tiff")),
-        "output must be TIFF; DNG is planned next"
+        "TIFF writer requires a .tif or .tiff extension"
     );
     ensure!(!path.exists(), "output already exists");
     let parent = path
@@ -295,45 +367,7 @@ pub fn write_tiff(path: &Path, image: &Image, color: &Color) -> Result<()> {
         {
             let mut encoder = TiffEncoder::new(&mut writer)?;
             let metadata = &color.photo_metadata;
-            let mut exif = encoder.extra_directory()?;
-            let rational =
-                |v: rawler::formats::tiff::Rational| tiff::encoder::Rational { n: v.n, d: v.d };
-            for (tag, value) in [
-                (0x829a, metadata.exposure_time),
-                (0x829d, metadata.fnumber),
-                (0x920a, metadata.focal_length),
-            ] {
-                if let Some(value) = value.filter(|v| v.d != 0) {
-                    exif.write_tag(tiff::tags::Tag::Unknown(tag), rational(value))?;
-                }
-            }
-            if let Some(values) = metadata
-                .lens_spec
-                .filter(|values| values.iter().all(|v| v.d != 0))
-            {
-                exif.write_tag(tiff::tags::Tag::Unknown(0xa432), &values.map(rational)[..])?;
-            }
-            for (tag, value) in [
-                (0xa433, &metadata.lens_make),
-                (0xa434, &metadata.lens_model),
-                (0x9003, &metadata.date_time_original),
-            ] {
-                if let Some(value) = value {
-                    exif.write_tag(tiff::tags::Tag::Unknown(tag), value.as_str())?;
-                }
-            }
-            if let Some(iso) = metadata.iso {
-                exif.write_tag(
-                    tiff::tags::Tag::Unknown(0x8827),
-                    iso.min(u16::MAX as u32) as u16,
-                )?;
-                if iso >= u16::MAX as u32 {
-                    exif.write_tag(tiff::tags::Tag::Unknown(0x8830), 3u16)?;
-                    exif.write_tag(tiff::tags::Tag::Unknown(0x8833), iso)?;
-                }
-            }
-            exif.write_tag(tiff::tags::Tag::Unknown(0xa001), 1u16)?; // sRGB
-            let exif_offset = exif.finish_with_offsets()?.offset;
+            let exif_offset = write_exif(&mut encoder, metadata, 1)?;
             let mut output = encoder
                 .new_image::<colortype::RGB16>(image.width.try_into()?, image.height.try_into()?)?;
             output
@@ -380,7 +414,7 @@ impl RawDecoder for SonyArwDecoder {
         decode(path, false)
     }
 }
-/// A future linear DNG writer receives the scene-linear image and camera calibration.
+/// Output writers receive the scene-linear image and camera calibration.
 pub trait OutputWriter {
     fn write(&self, path: &Path, image: &Image, color: &Color) -> Result<()>;
 }

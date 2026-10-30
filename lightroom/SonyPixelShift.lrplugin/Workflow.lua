@@ -58,7 +58,7 @@ function M.start(denoise)
                         view:static_text { title = 'Input: ' .. summary.input },
                         view:static_text { title = 'Result: ' .. summary.result },
                         view:static_text { title = 'Best for: ' .. summary.capture },
-                        view:static_text { title = 'Output: 16-bit TIFF' },
+                        view:static_text { title = 'Output: Linear DNG (uncompressed)' },
                         view:static_text { title = 'Save as: ' .. LrPathUtils.leafName(output) },
                         view:static_text { title = 'Folder: Beside source photos' },
                         view:static_text { title = 'Camera: Auto-detected | Experimental' },
@@ -93,15 +93,15 @@ function M.start(denoise)
                 assert(status == 0 and result and result.version == 1 and result.status == 'complete',
                     (result and result.message) or ('Engine failed (exit ' .. tostring(status) .. ').'))
                 assert(result.output == output, 'The engine reported a different output path; import was stopped.')
-                assert(LrFileUtils.exists(output) == 'file', 'Engine did not produce the TIFF.')
+                assert(LrFileUtils.exists(output) == 'file', 'Engine did not produce the DNG.')
                 local callbackRan = false
                 local existing = catalog:findPhotoByPath(output)
-                local writeStatus = catalog:withWriteAccessDo('Import Sony Pixel Shift TIFF', function()
-                    assert(existing or catalog:addPhoto(output), 'Lightroom did not import the TIFF.')
+                local writeStatus = catalog:withWriteAccessDo('Import Sony Pixel Shift DNG', function()
+                    assert(existing or catalog:addPhoto(output), 'Lightroom did not import the DNG.')
                     callbackRan = true
                 end, { timeout = 30 })
                 append(logPath, 'Catalog write: ' .. tostring(writeStatus))
-                assert(callbackRan, 'Catalog busy. TIFF saved; import it manually: ' .. output)
+                assert(callbackRan, 'Catalog busy. DNG saved; import it manually: ' .. output)
                 -- Verify after the write gate commits, independently of library filters.
                 local imported
                 for attempt = 1,3 do
@@ -109,7 +109,7 @@ function M.start(denoise)
                     if imported then break end
                     if attempt < 3 then LrTasks.sleep(0.1) end
                 end
-                assert(imported, 'TIFF saved, but catalog import was not confirmed: ' .. output)
+                assert(imported, 'DNG saved, but catalog import was not confirmed: ' .. output)
                 append(logPath, 'Catalog lookup: confirmed | ' .. output)
                 local selectOk, selectProblem = LrTasks.pcall(function()
                     catalog:setSelectedPhotos(imported, {})

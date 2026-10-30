@@ -122,7 +122,9 @@ def build_package(binary, platform, output_dir, revision, metadata, info=None):
         'For a trusted build, TESTING.md documents a manual per-helper xattr fix.\n'
         'The plugin never removes quarantine automatically.\n'
         'The camera profile and motion correction remain experimental. Output is\n'
-        'currently TIFF; DNG and bounded-memory processing are planned separately.\n'
+        'linear DNG by default; TIFF remains available through the CLI.\n'
+        'Adobe Adaptive profiles and AI Denoise need Lightroom host verification.\n'
+        'Bounded-memory processing remains planned separately.\n'
         'Keep original RAWs. A 16-shot capture can currently use 7-10 GB RAM.\n', encoding='utf-8')
     archive = output_dir / f'SonyPixelShift-{version}-{platform}.zip'
     with zipfile.ZipFile(archive, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as zipped:

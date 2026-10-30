@@ -25,12 +25,13 @@ assert(engine.launchError(126, false):find('Privacy & Security', 1, true))
 assert(not engine.launchError(126, true):find('Privacy & Security', 1, true))
 local manifest = {protocol_version=1, engine_version='0.1.0'}
 engine.checkManifest(manifest)
-engine.checkInfo({protocol_version=1, engine_version='0.1.0',camera_models={'ILCE-7CR'},autodetection=true}, manifest)
+engine.checkInfo({protocol_version=1, engine_version='0.1.0',camera_models={'ILCE-7CR'},autodetection=true,output_formats={'dng','tiff'}}, manifest)
 assert(not pcall(engine.checkManifest, {protocol_version=2,engine_version='0.1.0'}))
-assert(not pcall(engine.checkInfo, {protocol_version=1,engine_version='9.0',camera_models={'ILCE-7CR'},autodetection=true}, manifest))
+assert(not pcall(engine.checkInfo, {protocol_version=1, engine_version='0.1.0',camera_models={'ILCE-7CR'},autodetection=true}, manifest))
+assert(not pcall(engine.checkInfo, {protocol_version=1,engine_version='9.0',camera_models={'ILCE-7CR'},autodetection=true,output_formats={'dng','tiff'}}, manifest))
 local info = dofile('lightroom/SonyPixelShift.lrplugin/Info.lua')
-assert(#info.LrLibraryMenuItems == 2 and #info.LrExportMenuItems == 2)
-for _, menu in ipairs({info.LrLibraryMenuItems, info.LrExportMenuItems}) do
+assert(#info.LrLibraryMenuItems == 2 and info.LrExportMenuItems == nil)
+for _, menu in ipairs({info.LrLibraryMenuItems}) do
     for _, item in ipairs(menu) do
         assert(type(item.title) == 'string' and #item.title > 0)
         local file = assert(io.open('lightroom/SonyPixelShift.lrplugin/' .. item.file, 'rb'))

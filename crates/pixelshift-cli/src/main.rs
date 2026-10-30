@@ -121,7 +121,7 @@ fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
             "camera_names": catalog.cameras.iter().map(|p|p.name.as_str()).collect::<Vec<_>>(),
             "camera_profile_schema_version": catalog.schema_version,
             "metadata_backend": pixelshift_io::metadata_backend(),
-            "output_formats": ["tiff"],
+            "output_formats": ["dng", "tiff"],
             "experimental": true,
             "autodetection": true,
         })),
@@ -158,6 +158,15 @@ fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
             let required = spec.inputs.len();
             let base = job.parent().unwrap_or(Path::new("."));
             let output = resolve(base, &spec.output);
+            let format = output
+                .extension()
+                .and_then(|v| v.to_str())
+                .unwrap_or("")
+                .to_ascii_lowercase();
+            ensure!(
+                matches!(format.as_str(), "dng" | "tif" | "tiff"),
+                "output must be DNG or TIFF"
+            );
             ensure!(!output.exists(), "output already exists");
             let mut seen = std::collections::HashSet::new();
             let mut paths = Vec::new();
@@ -224,7 +233,15 @@ fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
                     decoded.frame.sequence = index + 1;
                 }
             }
-            let color = decoded[0].color.clone();
+            let mut color = decoded[0].color.clone();
+            color
+                .photo_metadata
+                .model
+                .get_or_insert_with(|| decoded[0].frame.model.clone());
+            color
+                .photo_metadata
+                .make
+                .get_or_insert_with(|| "SONY".into());
             let frames = decoded.into_iter().map(|d| d.frame).collect::<Vec<_>>();
             diagnostics.record("merge and motion correction")?;
             let (image, report) = merge(
@@ -236,8 +253,18 @@ fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
                     alignment_radius: spec.alignment_radius,
                 },
             )?;
-            diagnostics.record(format!("writing {}x{} TIFF", image.width, image.height))?;
-            pixelshift_io::TiffWriter.write(&output, &image, &color)?;
+            drop(frames); // Release source buffers before writing the result.
+            diagnostics.record(format!(
+                "writing {}x{} {}",
+                image.width,
+                image.height,
+                format.to_uppercase()
+            ))?;
+            if format == "dng" {
+                pixelshift_io::DngWriter.write(&output, &image, &color)?;
+            } else {
+                pixelshift_io::TiffWriter.write(&output, &image, &color)?;
+            }
             diagnostics.record(format!(
                 "complete in {:.2}s; {} pixels used reference fallback",
                 started.elapsed().as_secs_f64(),

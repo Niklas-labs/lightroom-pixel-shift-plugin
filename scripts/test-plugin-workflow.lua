@@ -76,7 +76,7 @@ local ok, problem = pcall(function()
                     local stem, ext = path:match('^(.*)(%.[^%.]+)$')
                     candidate = stem .. '-' .. n .. ext
                 end
-                if path:match('%.tif$') then output = candidate end
+                if path:match('%.dng$') then output = candidate end
                 return candidate
             end,
                 delete=function(path) os.remove(path) end},
@@ -91,7 +91,7 @@ local ok, problem = pcall(function()
                         if scenario == 'launch-failure' then return 126 end
                         local path=assert(command:match("'%-?%-output' '([^']+)'"))
                         write(path, '{"protocol_version":1,"engine_version":"' ..
-                            (scenario == 'bad-handshake' and '9.0' or '0.1.0') .. '","camera_models":["ILCE-7CR"],"autodetection":true}')
+                            (scenario == 'bad-handshake' and '9.0' or '0.1.0') .. '","camera_models":["ILCE-7CR"],"autodetection":true,"output_formats":["dng","tiff"]}')
                         return 0
                     end
                     state.job=assert(command:match("'%-%-job' '([^']+)'"))
@@ -103,7 +103,7 @@ local ok, problem = pcall(function()
                         write(state.result, '{"version":1,"status":"error","message":"test capture rejected"}')
                         return 1
                     end
-                    write(output, 'mock TIFF')
+                    write(output, 'mock DNG')
                     write(state.result, '{"version":1,"status":"complete","output":' ..
                         Protocol.jsonString(scenario == 'wrong-output' and output .. '.wrong' or output) .. '}')
                     return 0
@@ -147,8 +147,8 @@ local ok, problem = pcall(function()
         leafName=function(p) return p:match('([^/]+)$') end,
         child=function(a,b) return a .. '/' .. b end }
     local identity = function(p) return p end
-    assert(Output.path({'/raw/DSC01585.ARW', '/raw/DSC01582.ARW'}, false, pathUtils, identity) == '/raw/DSC01582-DSC01585-PixelShift.tif')
-    assert(Output.path({'/raw/one.ARW', '/raw/two.ARW'}, true, pathUtils, identity) == '/raw/one-two-NoiseReduced.tif')
+    assert(Output.path({'/raw/DSC01585.ARW', '/raw/DSC01582.ARW'}, false, pathUtils, identity) == '/raw/DSC01582-DSC01585-PixelShift.dng')
+    assert(Output.path({'/raw/one.ARW', '/raw/two.ARW'}, true, pathUtils, identity) == '/raw/one-two-NoiseReduced.dng')
     assert(not pcall(Output.path, {'/a/one.ARW', '/b/two.ARW'}, false, pathUtils, identity))
     for i=1,16 do assert(read(base .. '/DSC' .. string.format('%05d', i) .. '.ARW') == 'mock raw') end
 end)

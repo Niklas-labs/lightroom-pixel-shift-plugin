@@ -1,7 +1,7 @@
 # Roadmap
 
 The first installable alpha supports Sony a7CR four-shot and sixteen-shot Pixel
-Shift, RAW burst denoise, and TIFF output. This roadmap tracks follow-ups; items
+Shift, RAW burst denoise, and experimental linear DNG/TIFF output. This roadmap tracks follow-ups; items
 are complete only when their acceptance criteria have been verified.
 
 ## Delivered
@@ -131,21 +131,27 @@ real TIFF testing has exposed Adobe profile and RAW editing limitations.
 - [ ] Compare merged DNG and source ARW under matched WB, exposure and Adobe
   profile. Check neutral patches, chart colors, highlight recovery and tone.
 
-- [ ] Prove a streaming writer using rawler's lower-level TIFF/LJPEG facilities
-  or an upstream extension. Its existing high-level RGB/DNG API requires a whole
-  image and is not a solution to the memory requirement.
-- [ ] Write scene-linear camera RGB with calibration, illuminants, as-shot neutral,
+- [x] Prove an initial strip writer using the TIFF library, preserving linear
+  samples without a second full-image output allocation. The existing merger
+  still requires a whole image; an incremental region sink remains to implement.
+- [x] Write initial scene-linear camera RGB with calibration, illuminant, as-shot neutral,
   black/white semantics, crop, orientation, provenance and a small preview.
   Do not bake WB, sRGB conversion, gamma or tone mapping into the RAW image.
-- [ ] Establish sample scaling and precision that preserve relevant headroom and
-  negative black noise. Prefer compatible 16-bit storage if justified; evaluate
-  floating-point DNG if the requirements cannot be met. Lossless compression does
-  not remove integer quantization.
+- [x] Establish float32 storage that preserves relevant headroom and
+  negative black noise, with DNG 1.4 semantics and no quantization to 16-bit.
+  Evaluate compressed storage separately; lossless compression does not remove
+  integer quantization.
 - [ ] Start with uncompressed tiles, then add bounded parallel lossless tile
   compression. Avoid embedding all source ARWs by default.
 - [ ] Validate with Adobe DNG tooling, an independent reader and Lightroom import/
   development, including WB, exposure recovery, color, crop and orientation.
-- [ ] Retain TIFF as an alternative and switch the default only after validation.
+- [x] Retain TIFF as a CLI alternative. The plugin now selects experimental DNG
+  explicitly for Lightroom host testing; this is not a stable-output claim.
+- [x] Stream uncompressed float32 strips without another full-size output buffer,
+  with a bounded preview SubIFD and source buffers released before writing.
+- [x] Check synthetic sample/WB/matrix/metadata roundtrips, independent tifffile
+  and LibRaw development, and local Adobe DNG SDK validation. Full-size captures,
+  Adobe Adaptive Color/B&W and AI Denoise remain host acceptance gates.
 
 Acceptance: valid, interoperable linear DNG with tested sample/calibration
 roundtrips and bounded memory. A renamed TIFF is not DNG support.

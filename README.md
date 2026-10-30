@@ -21,8 +21,8 @@ and [CI packaging](docs/packaging.md).
 Select exactly four or sixteen original a7CR Pixel Shift ARWs, then choose
 **Library → Plug-in Extras → Pixel Shift: more detail (4 or 16 RAWs)**.
 The result is saved beside the sources, for example
-`DSC01582-DSC01585-PixelShift.tif`; existing files receive a unique suffix.
-Select sources from one folder. Burst results use `-NoiseReduced.tif`.
+`DSC01582-DSC01585-PixelShift.dng`; existing files receive a unique suffix.
+Select sources from one folder. Burst results use `-NoiseReduced.dng`.
 The plugin checks its engine version, runs asynchronously and imports only a
 validated completed result, confirms its catalog entry and attempts to select it
 without changing your library filters or current collection. A separate menu
@@ -30,7 +30,10 @@ handles RAW burst denoise. Failed jobs and diagnostic logs remain beside the
 output for troubleshooting.
 
 Start with four shots; sixteen shots still use the original high-memory engine.
-DNG and tiled processing are not included in this first installable alpha.
+The plugin now outputs experimental linear DNG. Adaptive Color/B&W and AI Denoise
+compatibility need Lightroom host testing. Tiled reconstruction is still pending.
+The uncompressed files are large: about 0.73 GB for four-shot 61 MP or 2.9 GB for
+sixteen-shot 244 MP, before small metadata/preview overhead.
 
 ## Build and run
 
@@ -54,7 +57,7 @@ Example `job.json` (paths resolve against its directory):
   "camera": "auto",
   "mode": "auto",
   "inputs": ["DSC00001.ARW", "DSC00002.ARW", "DSC00003.ARW", "DSC00004.ARW"],
-  "output": "merged.tif",
+  "output": "merged.dng",
   "motion_threshold": 0.08,
   "alignment_radius": 2
 }
@@ -105,17 +108,17 @@ including capture auto-detection, other Sony models, memory preferences and DNG.
   color, 16-shot half-pixel interleaving, sensor-domain averaging, integer residual
   translation search and local reference fallback.
 - `pixelshift-io`: pinned rawler ARW decoder, native capture metadata validation,
-  normalized black/white levels, single D65 color rendering, ICC-tagged RGB16 TIFF,
+  normalized black/white levels, calibrated float32 linear DNG, optional sRGB RGB16 TIFF,
   temporary-file publication with no overwrite. RAW decoder and output writer
   traits are extension boundaries.
 - `pixelshift-cli`: strict versioned jobs, explicit synthetic input mode and
   structured results. The a7CR is the only registered camera.
-- Lua: bundled-engine discovery, version checks, selection → job → process → TIFF
+- Lua: bundled-engine discovery, version checks, selection → job → process → DNG
   import, persistent diagnostics and mocked SDK workflow checks.
 
 Next: real a7CR validation, tiled processing / memory budgets, subpixel alignment
-and spatial motion masks, then **linear DNG** with camera calibration and source
-metadata. Other cameras and pixel-shift formats get new profiles/decoders; none
+and spatial motion masks, plus Lightroom validation of **linear DNG** and
+lossless compression. Other cameras and pixel-shift formats get new profiles/decoders; none
 are implemented now. Denoising a single Pixel Shift sequence only averages
 redundant same-color observations (principally green); it cannot provide a
 16-frame noise reduction gain for every RGB channel. Ordinary burst denoise
@@ -133,8 +136,14 @@ Lens identification does not unlock Adobe lens profiles restricted to RAW files;
 do not select an unrelated lens to compensate. Lens identity stored only in
 proprietary Sony tags still needs a resolver. The TIFF renderer does not apply
 Adobe camera profiles, tone curves, lens corrections or source Lightroom edits,
-so its appearance can differ from the ARWs. Linear DNG is the next output target;
-Adaptive profile and AI feature compatibility must be tested in Lightroom.
+so its appearance can differ from the ARWs. Linear DNG preserves scene-linear
+camera RGB, reciprocal as-shot WB, a D65 matrix, black/white levels, orientation,
+output crop and standard source EXIF. Only its small preview is developed to sRGB.
+It streams float32 strips without a second full-image render buffer and releases
+source frames before writing; the merger itself still holds whole images.
+Use a `.tif`/`.tiff` output path in CLI jobs for the existing TIFF renderer.
+Adaptive profile, AI Denoise and lens-correction compatibility must be tested in
+Lightroom. DNG does not contain copied Sony MakerNotes or correction opcodes.
 
 Read [dependency evaluation](docs/dependencies.md), [architecture](docs/architecture.md)
 and [validation requirements](docs/validation.md) before calling a profile stable.

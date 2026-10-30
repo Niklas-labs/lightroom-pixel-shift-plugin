@@ -54,5 +54,5 @@ for index in range(16):
                   "xyz_to_camera": [0.82, -0.2976, -0.0719, -0.4296, 1.2053, 0.2532,
                                     -0.0429, 0.1282, 0.5774]}}))
 (root / "job.json").write_text(json.dumps({"version": 1, "camera": "auto", "mode": "auto",
-    "inputs": inputs, "output": "demo.tif", "alignment_radius": 0, "motion_threshold": 0}))
+    "inputs": inputs, "output": "demo.dng", "alignment_radius": 0, "motion_threshold": 0}))
 print(root / "job.json")

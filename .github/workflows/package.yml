@@ -29,6 +29,13 @@ jobs:
         with:
           cache-on-failure: true
       - run: cargo test --workspace --locked
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install rawpy==0.27.1 tifffile==2026.10.15
+      - run: cargo build --locked -p pixelshift-cli
+      - name: Validate DNG samples and development with independent readers
+        run: python scripts/test-dng.py --engine target/debug/sony-pixelshift
 
   macos:
     needs: [assembler-tests, engine-tests]

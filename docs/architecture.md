@@ -39,15 +39,19 @@ may misclassify aliasing/noise and needs spatial mask refinement.
 The TIFF renderer applies reference-shot WB and a single D65 catalog matrix,
 converts to sRGB, clips and applies the sRGB transfer. No exposure matching,
 dual-illuminant interpolation, lens correction or highlight recovery. ICC is
-embedded. Capture metadata beyond sequence/exposure/model/serial and orientation
-is not yet carried into the TIFF.
+embedded. A whitelist of standard camera/lens/exposure metadata is preserved; private
+MakerNotes, GPS, serials and geometry-dependent correction tags are omitted.
 
-DNG milestone: implement `OutputWriter` for full-color **linear DNG**, retaining
-camera-space linear RGB rather than wrapping gamma-encoded TIFF pixels. Require
-DNGVersion/BackwardVersion, LinearRaw photometric tags, camera model, calibrated
-matrices/illuminants, neutral/WB, black/white semantics, crop, orientation, preview
-and provenance. Validate both four- and sixteen-shot results in Adobe tooling
-and Lightroom before exposing DNG as an output option.
+The DNG writer stores camera-space float32 **linear DNG 1.4**, with a single
+D65 matrix, as-shot neutral, black/white semantics, crop, orientation, standard
+EXIF and a bounded sRGB preview SubIFD. Main RGB is not gamma encoded or white
+balanced. Uncompressed strips borrow the merged RGB buffer; sources are released
+before output. This bounds writer overhead but does not fix the whole-image
+merger's peak memory. TIFF remains a separate rendered output.
+
+Numerical roundtrips, independent tifffile/LibRaw checks and a local Adobe SDK
+validator check cover synthetic output. Lightroom Adaptive profiles, AI Denoise,
+real color and lens corrections remain explicit host gates. See [DNG](dng.md).
 
 Follow-up plugin protocol should add persistent job diagnostics, machine-readable
 progress, cancellation and settings. Current invocation is one job per process,

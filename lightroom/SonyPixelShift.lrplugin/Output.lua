@@ -14,7 +14,7 @@ function M.path(paths, denoise, pathUtils, chooseUnique)
     end)
     local range = names[1]
     if names[#names] ~= range then range = range .. '-' .. names[#names] end
-    local suffix = denoise and '-NoiseReduced.tif' or '-PixelShift.tif'
+    local suffix = denoise and '-NoiseReduced.dng' or '-PixelShift.dng'
     return chooseUnique(pathUtils.child(folder, range .. suffix))
 end
 return M

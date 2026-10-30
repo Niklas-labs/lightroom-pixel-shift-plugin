@@ -84,7 +84,7 @@ fn handshake_and_persistent_failure_diagnostics() {
     let data: serde_json::Value = serde_json::from_slice(&fs::read(&info).unwrap()).unwrap();
     assert_eq!(data["protocol_version"], 1);
     assert_eq!(data["camera_models"][0], "ILCE-7CR");
-    assert_eq!(data["output_formats"][0], "tiff");
+    assert_eq!(data["output_formats"], json!(["dng", "tiff"]));
     let result = dir.path().join("failure.json");
     let log = dir.path().join("failure.log");
     let out = Command::new(env!("CARGO_BIN_EXE_sony-pixelshift"))
@@ -234,5 +234,38 @@ fn profile_override_controls_model_capabilities_and_cfa() {
             assert!(!run.status.success(), "case {case}");
             assert!(!dir.path().join("result.tif").exists());
         }
+    }
+}
+
+#[test]
+fn all_merge_modes_write_dng_and_reject_overwrite() {
+    for mode in ["four", "sixteen", "denoise"] {
+        let (dir, job) = setup(mode);
+        let mut spec: serde_json::Value = serde_json::from_slice(&fs::read(&job).unwrap()).unwrap();
+        spec["output"] = json!("merged.dng");
+        fs::write(&job, serde_json::to_vec(&spec).unwrap()).unwrap();
+        let run = || {
+            Command::new(env!("CARGO_BIN_EXE_sony-pixelshift"))
+                .args(["merge", "--fixtures", "--job"])
+                .arg(&job)
+                .output()
+                .unwrap()
+        };
+        let result = run();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        let report: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+        assert_eq!(
+            report["output"],
+            dir.path().join("merged.dng").to_str().unwrap()
+        );
+        let before = fs::read(dir.path().join("merged.dng")).unwrap();
+        assert!(before.starts_with(b"II*\0") || before.starts_with(b"MM\0*"));
+        assert!(!run().status.success());
+        assert_eq!(fs::read(dir.path().join("merged.dng")).unwrap(), before);
+        assert!(!dir.path().join("result.tif").exists());
     }
 }

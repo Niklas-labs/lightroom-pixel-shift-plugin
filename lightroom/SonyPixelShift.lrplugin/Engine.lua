@@ -26,6 +26,11 @@ function M.checkInfo(info, manifest)
     assert(info.engine_version == M.version, 'The engine and plugin versions do not match.')
     if manifest then assert(info.engine_version == manifest.engine_version, 'The engine does not match its package manifest.') end
     assert(type(info.camera_models) == 'table' and #info.camera_models > 0, 'The engine has no supported camera profiles.')
+    local supportsDng = false
+    for _, format in ipairs(info.output_formats or {}) do
+        if format == 'dng' then supportsDng = true end
+    end
+    assert(supportsDng, 'This engine cannot write DNG. Reinstall the complete current plugin package.')
     assert(info.autodetection == true, 'This engine does not support automatic capture detection. Reinstall the complete current plugin package.')
 end
 function M.userError(value)
