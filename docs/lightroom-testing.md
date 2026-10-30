@@ -68,9 +68,11 @@ and attempts to select the result. If it is hidden, check library filters and th
 current collection; the plugin preserves both. A saved DNG remains available if
 catalog import fails.
 
-Sixteen-shot captures are also available, but float32 source buffers alone use
-about 3.9 GB at 61 MP; decoder/allocator working memory is additional. Do the first sixteen-shot test on a machine with enough
-free memory. The plugin doesn't apply Lightroom edits from the selected sources;
+For sixteen-shot captures, choose **Memory: Disk (less RAM)** if RAM is limited.
+Native packed sources use about 1.95 GB at 61 MP in RAM mode, or that amount of
+scratch disk in disk mode. One-frame decoder/allocator working memory is additional.
+Compare both modes on the same selection; output pixels/crop/color should match.
+Record the log performance lines and verify scratch cleanup on completion/failure. The plugin doesn't apply Lightroom edits from the selected sources;
 it reconstructs their original sensor data.
 
 The denoise menu operates on ordinary RAW bursts. Initial Sony metadata coverage

@@ -1,6 +1,6 @@
 //! Decoder and output boundaries. No RAW development is performed before merging.
 use anyhow::{Context, Result, bail, ensure};
-use pixelshift_core::{Frame, Image, ImageSource, Region};
+use pixelshift_core::{Frame, Image, ImageSource, Region, SensorInfo, SensorSource};
 use serde::{Deserialize, Serialize};
 use std::{
     fs::File,
@@ -9,6 +9,8 @@ use std::{
 };
 use tiff::encoder::TiffEncoder;
 
+mod store;
+pub use store::{PackedSensor, SourceStorage};
 mod output;
 pub use output::{OutputCompression, OutputStats, WriteOptions};
 
@@ -111,6 +113,49 @@ impl Decoded {
             source_crop: None,
         })
     }
+    pub fn into_parts(self) -> (SourceMetadata, Frame) {
+        (
+            SourceMetadata {
+                info: self.frame.info(),
+                color: self.color,
+                signature: self.signature,
+                source_crop: self.source_crop,
+            },
+            self.frame,
+        )
+    }
+    pub fn compatible(&self, other: &Self) -> bool {
+        if self.source_crop != other.source_crop {
+            return false;
+        }
+        match (&self.signature, &other.signature) {
+            (Some(a), Some(b)) => {
+                a.iso == b.iso
+                    && a.exposure == b.exposure
+                    && a.aperture == b.aperture
+                    && a.serial == b.serial
+                    && a.pixel_shift.as_ref().map(|v| (v.group_id, v.shot_count))
+                        == b.pixel_shift.as_ref().map(|v| (v.group_id, v.shot_count))
+            }
+            (None, None) => self.color == other.color,
+            _ => false,
+        }
+    }
+}
+/// Capture/calibration metadata independent of source sample storage.
+pub struct SourceMetadata {
+    pub info: SensorInfo,
+    pub color: Color,
+    signature: Option<Capture>,
+    source_crop: Option<Crop>,
+}
+impl SourceMetadata {
+    pub fn source_crop(&self) -> Option<Crop> {
+        self.source_crop
+    }
+    pub fn capture_metadata(&self) -> Option<&Capture> {
+        self.signature.as_ref()
+    }
     pub fn compatible(&self, other: &Self) -> bool {
         if self.source_crop != other.source_crop {
             return false;
@@ -139,15 +184,53 @@ pub struct Fixture {
 }
 
 pub fn decode(path: &Path, fixture: bool) -> Result<Decoded> {
+    Ok(decode_internal(path, fixture, None)?.0)
+}
+/// Decode one source into its native packed store. Metadata retains no pixels.
+/// Float fixtures use a lossless float store for numerical validation.
+pub fn decode_stored(
+    path: &Path,
+    fixture: bool,
+    storage: SourceStorage,
+    scratch: Option<&Path>,
+) -> Result<(SourceMetadata, PackedSensor)> {
+    let (metadata, store) = decode_internal(path, fixture, Some((storage, scratch)))?;
+    Ok((
+        metadata.into_parts().0,
+        store.context("missing decoded sensor store")?,
+    ))
+}
+fn decode_internal(
+    path: &Path,
+    fixture: bool,
+    storage: Option<(SourceStorage, Option<&Path>)>,
+) -> Result<(Decoded, Option<PackedSensor>)> {
     if fixture {
         let input: Fixture = serde_json::from_reader(std::io::BufReader::new(File::open(path)?))?;
         input.frame.validate()?;
-        return Ok(Decoded {
-            frame: input.frame,
-            color: input.color,
-            signature: None,
-            source_crop: input.source_crop,
-        });
+        let mut frame = input.frame;
+        let store = if let Some((storage, scratch)) = storage {
+            let pixels = std::mem::take(&mut frame.pixels);
+            Some(PackedSensor::from_frame(
+                Frame {
+                    pixels,
+                    ..frame.clone()
+                },
+                storage,
+                scratch,
+            )?)
+        } else {
+            None
+        };
+        return Ok((
+            Decoded {
+                frame,
+                color: input.color,
+                signature: None,
+                source_crop: input.source_crop,
+            },
+            store,
+        ));
     }
     ensure!(
         path.extension()
@@ -180,14 +263,31 @@ pub fn decode(path: &Path, fixture: bool) -> Result<Decoded> {
         rawler::RawImageData::Integer(data) => data,
         _ => bail!("floating RAW unsupported"),
     };
-    let pixels = data
-        .into_iter()
-        .enumerate()
-        .map(|(i, v)| {
-            let phase = ((i / raw.width) % 2) * 2 + (i % raw.width) % 2;
-            (v as f32 - black[phase]) / (white[phase] - black[phase])
-        })
-        .collect();
+    let info = pixelshift_core::SensorInfo {
+        width: raw.width,
+        height: raw.height,
+        cfa,
+        model: raw.model.clone(),
+        sequence,
+    };
+    let (pixels, store) = if let Some((storage, scratch)) = storage {
+        (
+            Vec::new(),
+            Some(PackedSensor::from_u16(
+                info, data, black, white, storage, scratch,
+            )?),
+        )
+    } else {
+        let pixels = data
+            .into_iter()
+            .enumerate()
+            .map(|(i, v)| {
+                let phase = ((i / raw.width) % 2) * 2 + (i % raw.width) % 2;
+                (v as f32 - black[phase]) / (white[phase] - black[phase])
+            })
+            .collect();
+        (pixels, None)
+    };
     // Rawler matrices are XYZ -> camera. Keep D65 for rendering and include
     // illuminant A, when available, for dual-illuminant DNG interpolation.
     let matrix = raw
@@ -227,19 +327,22 @@ pub fn decode(path: &Path, fixture: bool) -> Result<Decoded> {
             .try_into()
             .map_err(|_| anyhow::anyhow!("bad matrix"))?,
     };
-    Ok(Decoded {
-        frame: Frame {
-            width: raw.width,
-            height: raw.height,
-            pixels,
-            cfa,
-            model: raw.model,
-            sequence,
+    Ok((
+        Decoded {
+            frame: Frame {
+                width: raw.width,
+                height: raw.height,
+                pixels,
+                cfa,
+                model: raw.model,
+                sequence,
+            },
+            color,
+            signature: Some(capture),
+            source_crop,
         },
-        color,
-        signature: Some(capture),
-        source_crop,
-    })
+        store,
+    ))
 }
 
 fn inverse(m: [f32; 9]) -> Result<[f32; 9]> {
@@ -542,11 +645,25 @@ pub fn write_tiff_from_source(
 /// Future formats plug into this boundary without changing sensor reconstruction.
 pub trait RawDecoder {
     fn decode(&self, path: &Path) -> Result<Decoded>;
+    fn decode_to_store(
+        &self,
+        path: &Path,
+        storage: SourceStorage,
+        scratch: Option<&Path>,
+    ) -> Result<(SourceMetadata, PackedSensor)>;
 }
 pub struct SonyArwDecoder;
 impl RawDecoder for SonyArwDecoder {
     fn decode(&self, path: &Path) -> Result<Decoded> {
         decode(path, false)
+    }
+    fn decode_to_store(
+        &self,
+        path: &Path,
+        storage: SourceStorage,
+        scratch: Option<&Path>,
+    ) -> Result<(SourceMetadata, PackedSensor)> {
+        decode_stored(path, false, storage, scratch)
     }
 }
 /// Output writers receive the scene-linear image and camera calibration.

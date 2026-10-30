@@ -6,6 +6,7 @@ local LrPathUtils = import 'LrPathUtils'
 local LrTasks = import 'LrTasks'
 local LrPrefs = import 'LrPrefs'
 local LrView = import 'LrView'
+local LrObservableTable = import 'LrObservableTable'
 local LrProgressScope = import 'LrProgressScope'
 local Protocol = require 'Protocol'
 local Engine = require 'Engine'
@@ -53,9 +54,12 @@ function M.start(denoise)
                 local output = Output.path(paths, denoise, LrPathUtils, LrFileUtils.chooseUniqueFileName)
                 local summary = Labels.summary(denoise, count)
                 local view = LrView.osFactory()
+                local settings = LrObservableTable.makePropertyTable(context)
+                settings.sourceStorage = preferences.sourceStorage == 'disk' and 'disk' or 'ram'
                 local choice = LrDialogs.presentModalDialog {
                     title = summary.title,
                     contents = view:column {
+                        bind_to = settings,
                         spacing = view:control_spacing(),
                         view:static_text { title = 'Input: ' .. summary.input },
                         view:static_text { title = 'Result: ' .. summary.result },
@@ -64,10 +68,18 @@ function M.start(denoise)
                         view:static_text { title = 'Save as: ' .. LrPathUtils.leafName(output) },
                         view:static_text { title = 'Folder: Beside source photos' },
                         view:static_text { title = 'Camera: Auto-detected | Experimental' },
+                        view:row {
+                            view:static_text { title = 'Memory:' },
+                            view:popup_menu { value = LrView.bind('sourceStorage'), items = {
+                                { title = 'RAM', value = 'ram' },
+                                { title = 'Disk (less RAM)', value = 'disk' },
+                            } },
+                        },
                     },
                     actionVerb = denoise and 'Reduce noise' or 'Merge', cancelVerb = 'Cancel',
                 }
                 if choice ~= 'ok' then return end
+                preferences.sourceStorage = settings.sourceStorage
                 assert(not LrFileUtils.exists(output), 'Output already exists. Retry to choose a unique name.')
                 progress = Progress.new(LrProgressScope { title=summary.title, functionContext=context }, count, LrTasks)
                 LrTasks.yield() -- Let Lightroom paint the scope before launching the helper.
@@ -76,7 +88,7 @@ function M.start(denoise)
                 infoPath = jobPath .. '.engine.json'
                 logPath = LrFileUtils.chooseUniqueFileName(output .. '.pixelshift.log')
                 local mode = denoise and 'denoise' or 'auto'
-                write(jobPath, Protocol.job(paths, output, mode))
+                write(jobPath, Protocol.job(paths, output, mode, settings.sourceStorage))
                 write(logPath, 'Sony Pixel Shift Lightroom plugin ' .. Engine.version .. '\nBuild: ' .. (manifest and manifest.source_revision or 'development override') .. '\nHelper: ' .. executable .. '\n')
                 progress:stage('Checking engine')
                 local status = LrTasks.execute(Engine.command(executable, { 'info', '--output', infoPath }, WIN_ENV))

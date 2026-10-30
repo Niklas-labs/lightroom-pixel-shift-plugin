@@ -1,0 +1,169 @@
+{
+  "fixture": "synthetic textured/noisy Bayer; six decimal input samples",
+  "width": 1024,
+  "height": 768,
+  "mode": "sixteen",
+  "workers": 4,
+  "strip_rows": 32,
+  "platform": "Linux-6.18.55-x86_64-with-glibc2.41",
+  "machine": "x86_64",
+  "cache_state": "uncontrolled; generated fixtures may be cached",
+  "runs": [
+    {
+      "variant": "reference-none",
+      "wall_seconds": 0.9949667710025096,
+      "execution": {
+        "compression": "none",
+        "peak_output_region_bytes": 780288,
+        "peak_source_region_bytes": 0,
+        "resources": {
+          "cpu_system_seconds": 0.063256,
+          "cpu_user_seconds": 1.435374,
+          "input_block_operations": 0,
+          "output_block_operations": 0,
+          "peak_resident_bytes": 95846400
+        },
+        "scratch_bytes": 0,
+        "source_buffer_bytes": 67108864,
+        "source_storage": "normalized_f32_ram",
+        "streamed_output": false,
+        "strip_rows": 32,
+        "timings": {
+          "decode_seconds": 0.452868022,
+          "output": {
+            "encode_write_seconds": 0.0063650819999999985,
+            "fallback_pixels": 0,
+            "output_bytes": 37644880,
+            "peak_region_pixels": 65024,
+            "preview_seconds": 0.007543728,
+            "reconstruction_seconds": 0.002521545000000001,
+            "regions": 48,
+            "total_seconds": 0.022971176
+          },
+          "preflight_seconds": 0.02836235,
+          "reference_seconds": 0.475497897,
+          "total_seconds": 0.991054362,
+          "validation_alignment_seconds": 0.009420671
+        }
+      },
+      "decoded_sha256": "bbc51dac85907512069258c8999b7eee2681c1f557e97779f9b7ea820fb3e4f4"
+    },
+    {
+      "variant": "streamed-none",
+      "wall_seconds": 0.9722618870000588,
+      "execution": {
+        "compression": "none",
+        "peak_output_region_bytes": 780288,
+        "peak_source_region_bytes": 1835008,
+        "resources": {
+          "cpu_system_seconds": 0.043383,
+          "cpu_user_seconds": 1.459185,
+          "input_block_operations": 0,
+          "output_block_operations": 0,
+          "peak_resident_bytes": 59473920
+        },
+        "scratch_bytes": 0,
+        "source_buffer_bytes": 67108864,
+        "source_storage": "float32_ram",
+        "streamed_output": true,
+        "strip_rows": 32,
+        "timings": {
+          "decode_seconds": 0.449647449,
+          "output": {
+            "encode_write_seconds": 0.009062306000000004,
+            "fallback_pixels": 0,
+            "output_bytes": 37644880,
+            "peak_region_pixels": 65024,
+            "preview_seconds": 0.007290019,
+            "reconstruction_seconds": 0.4584999190000001,
+            "regions": 48,
+            "total_seconds": 0.481822719
+          },
+          "preflight_seconds": 0.028326897,
+          "reference_seconds": 0.0,
+          "total_seconds": 0.96863283,
+          "validation_alignment_seconds": 0.007866954
+        }
+      },
+      "decoded_sha256": "bbc51dac85907512069258c8999b7eee2681c1f557e97779f9b7ea820fb3e4f4"
+    },
+    {
+      "variant": "streamed-lossless",
+      "wall_seconds": 1.1277353140030755,
+      "execution": {
+        "compression": "lossless",
+        "peak_output_region_bytes": 780288,
+        "peak_source_region_bytes": 1835008,
+        "resources": {
+          "cpu_system_seconds": 0.043836,
+          "cpu_user_seconds": 1.696771,
+          "input_block_operations": 0,
+          "output_block_operations": 0,
+          "peak_resident_bytes": 59736064
+        },
+        "scratch_bytes": 0,
+        "source_buffer_bytes": 67108864,
+        "source_storage": "float32_ram",
+        "streamed_output": true,
+        "strip_rows": 32,
+        "timings": {
+          "decode_seconds": 0.451495366,
+          "output": {
+            "encode_write_seconds": 0.222261404,
+            "fallback_pixels": 0,
+            "output_bytes": 31936996,
+            "peak_region_pixels": 65024,
+            "preview_seconds": 0.007215917,
+            "reconstruction_seconds": 0.399099342,
+            "regions": 48,
+            "total_seconds": 0.635378061
+          },
+          "preflight_seconds": 0.028196352,
+          "reference_seconds": 0.0,
+          "total_seconds": 1.124625111,
+          "validation_alignment_seconds": 0.007781876
+        }
+      },
+      "decoded_sha256": "bbc51dac85907512069258c8999b7eee2681c1f557e97779f9b7ea820fb3e4f4"
+    },
+    {
+      "variant": "disk-lossless",
+      "wall_seconds": 1.1131310909986496,
+      "execution": {
+        "compression": "lossless",
+        "peak_output_region_bytes": 780288,
+        "peak_source_region_bytes": 1835008,
+        "resources": {
+          "cpu_system_seconds": 0.071821,
+          "cpu_user_seconds": 1.643295,
+          "input_block_operations": 0,
+          "output_block_operations": 0,
+          "peak_resident_bytes": 10244096
+        },
+        "scratch_bytes": 50331648,
+        "source_buffer_bytes": 0,
+        "source_storage": "float32_disk",
+        "streamed_output": true,
+        "strip_rows": 32,
+        "timings": {
+          "decode_seconds": 0.444222954,
+          "output": {
+            "encode_write_seconds": 0.21652023399999998,
+            "fallback_pixels": 0,
+            "output_bytes": 31936996,
+            "peak_region_pixels": 65024,
+            "preview_seconds": 0.008784477,
+            "reconstruction_seconds": 0.39209748899999997,
+            "regions": 48,
+            "total_seconds": 0.62381303
+          },
+          "preflight_seconds": 0.028115131,
+          "reference_seconds": 0.0,
+          "total_seconds": 1.110764474,
+          "validation_alignment_seconds": 0.012595015
+        }
+      },
+      "decoded_sha256": "bbc51dac85907512069258c8999b7eee2681c1f557e97779f9b7ea820fb3e4f4"
+    }
+  ]
+}

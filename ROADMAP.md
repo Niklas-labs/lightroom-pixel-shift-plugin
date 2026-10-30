@@ -20,8 +20,8 @@ are complete only when their acceptance criteria have been verified.
 - [x] Optimized release builds with thin LTO and Rayon-parallel reconstruction.
 
 These checks do not establish real-camera image quality or Lightroom SDK host
-acceptance. The current path holds source frames in RAM and streams output regions; a full
-reconstructed image is no longer retained.
+acceptance. The current path stores native u16 sensors in RAM or temporary disk files and
+normalizes row windows while streaming output. A full reconstructed image is no longer retained.
 
 ## 1. Validate the alpha with real captures
 
@@ -93,15 +93,16 @@ tradeoff. CI runner timing is a regression signal, not a product speed promise.
 
 - [x] Introduce output-region and pull-based streaming writer interfaces. Keep
   the whole-image fixture merger as a numerical reference.
-- [ ] Add raw input-region sources and bounded source caches for packed/disk
-  storage; current output regions still sample full RAM source frames.
-- [ ] Decode each ARW once into packed `u16` sensor storage, with interchangeable
+- [x] Add raw input-row sources and bounded normalized source windows for
+  interchangeable packed/disk storage; no per-pixel disk reads.
+- [x] Decode each ARW once into packed `u16` sensor storage, with interchangeable
   RAM and disk stores. Normalize only the regions currently being processed.
 - [ ] Build small alignment guides during ingestion; release whole-frame decoder
   buffers after storing each source.
-- [ ] Reconstruct overlapping output tiles with halos derived from the transform,
-  interpolation kernel and motion-mask neighborhood. Anchor coordinates globally
-  so tile boundaries do not change results.
+- [x] Reconstruct output bands with globally anchored, even-origin source halos
+  covering supported integer transforms and bilinear CFA interpolation. Test
+  partial strips/2D regions against full-frame output; future motion kernels must
+  extend the halo contract.
 - [x] Stream DNG/TIFF reconstruction and encoding without a full RGB output.
   Stitch irregular regions with global coordinates; verify float-bit equality,
   preview parity, motion fallback and worker-count independence.
@@ -109,6 +110,8 @@ tradeoff. CI runner timing is a regression signal, not a product speed promise.
   preview from those pixels, and clean partial output on late failures.
 - [ ] Bound source caches, active tiles, codec workspace and pending writes under
   one memory budget, with writer backpressure.
+- [x] Expose **RAM / Disk (less RAM)** in Lightroom with a remembered preference;
+  add CLI scratch-directory selection and report packed/scratch/window bytes.
 - [ ] Expose **Auto**, **Low memory** and **High performance** execution preferences,
   plus optional scratch location and an advanced memory budget. Keep image-quality
   controls separate: changing storage preference must preserve numerical results.
@@ -179,7 +182,7 @@ real TIFF testing has exposed Adobe profile and RAW editing limitations.
 - [x] Retain TIFF as a CLI alternative. The plugin now selects experimental DNG
   explicitly for Lightroom host testing; this is not a stable-output claim.
 - [x] Stream reconstructed float32 regions into lossless/uncompressed strips,
-  with a bounded preview SubIFD. Sources remain in RAM through output rendering.
+  with a bounded preview SubIFD and interchangeable packed RAM/disk sources.
 - [x] Check synthetic sample/WB/matrix/metadata roundtrips, independent tifffile
   and LibRaw development, and local Adobe DNG SDK validation. Full-size captures,
   Adobe Adaptive Color/B&W and AI Denoise remain host acceptance gates.
@@ -232,8 +235,8 @@ dispatch only after profiling, while keeping distributed binaries compatible.
 - [ ] Add tagged release assets and Windows publisher signing; preserve native
   architecture and extracted-package tests.
 
-Next implementation order: packed RAM/disk source stores and explicit input
-halos → measured memory budgets/preferences → subpixel reconstruction/motion →
+Next implementation order: full-size packed-store measurements and ingestion
+guide caching → measured memory budgets/automatic storage selection → subpixel reconstruction/motion →
 tuning and release polish. Real-capture acceptance and color/loader validation
 continue alongside this work. Streamed output and lossless DNG are implemented. Run small DNG and
 subpixel feasibility tests early enough to shape the region/calibration APIs.

@@ -1,7 +1,11 @@
 use anyhow::{Context, Result, ensure};
 use clap::{Parser, Subcommand};
-use pixelshift_core::{CameraProfile, ImageSource, Mode, Options, PreparedMerge, merge};
-use pixelshift_io::{OutputCompression, RawDecoder, WriteOptions, profiles::Catalog};
+use pixelshift_core::{
+    CameraProfile, ImageSource, Mode, Options, PreparedMerge, SensorSource, merge,
+};
+use pixelshift_io::{
+    OutputCompression, RawDecoder, SourceStorage, WriteOptions, profiles::Catalog,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
@@ -78,6 +82,11 @@ struct Job {
     compression: OutputCompression,
     #[serde(default = "strip_rows")]
     strip_rows: usize,
+    #[serde(default)]
+    source_storage: SourceStorage,
+    /// Existing scratch directory; paths are relative to the job. OS temp by default.
+    #[serde(default)]
+    scratch_directory: Option<PathBuf>,
 }
 fn strip_rows() -> usize {
     32
@@ -135,7 +144,8 @@ fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
             "output_formats": ["dng", "tiff"],
             "output_compressions":["lossless","none"],
             "streamed_output":true,
-            "source_storage":"normalized_f32_ram",
+            "source_storage":"packed_u16_ram",
+            "source_storages":["ram","disk"],
             "experimental": true,
             "autodetection": true,
         })),
@@ -182,6 +192,16 @@ fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
             let mode = detection::mode(spec.mode.as_deref(), spec.inputs.len())?;
             let required = spec.inputs.len();
             let base = job.parent().unwrap_or(Path::new("."));
+            let scratch = spec
+                .scratch_directory
+                .as_ref()
+                .map(|path| resolve(base, path));
+            if let Some(path) = &scratch {
+                ensure!(
+                    path.is_dir(),
+                    "scratch_directory must be an existing directory"
+                );
+            }
             let output = resolve(base, &spec.output);
             let format = output
                 .extension()
@@ -219,16 +239,42 @@ fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
             diagnostics.record(format!("detected {camera}, {mode:?}, {required} sources"))?;
             let preflight_seconds = started.elapsed().as_secs_f64();
             let decode_start = Instant::now();
+            diagnostics.record(format!(
+                "source storage: {:?}; scratch directory: {}",
+                spec.source_storage,
+                scratch
+                    .as_ref()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|| "OS temporary directory".into())
+            ))?;
             let mut decoded = Vec::new();
+            let mut reference_frames = Vec::new();
+            let mut sensor_stores = Vec::new();
             for (i, path) in paths.iter().enumerate() {
                 diagnostics.record(format!("decode {}/{}: {}", i + 1, required, path.display()))?;
-                let frame = if *fixtures {
-                    pixelshift_io::decode(path, true)?
+                let (frame, store) = if *reference {
+                    let (metadata, frame) = pixelshift_io::decode(path, true)?.into_parts();
+                    reference_frames.push(frame);
+                    (metadata, None)
                 } else {
-                    pixelshift_io::SonyArwDecoder.decode(path)?
+                    let (metadata, store) = if *fixtures {
+                        pixelshift_io::decode_stored(
+                            path,
+                            true,
+                            spec.source_storage,
+                            scratch.as_deref(),
+                        )?
+                    } else {
+                        pixelshift_io::SonyArwDecoder.decode_to_store(
+                            path,
+                            spec.source_storage,
+                            scratch.as_deref(),
+                        )?
+                    };
+                    (metadata, Some(store))
                 };
                 ensure!(
-                    frame.frame.cfa == profile.cfa_pattern()?,
+                    frame.info.cfa == profile.cfa_pattern()?,
                     "RAW CFA does not match camera profile"
                 );
                 if mode != Mode::Denoise && !fixtures {
@@ -251,18 +297,24 @@ fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
                     );
                 }
                 decoded.push(frame);
+                sensor_stores.push(store);
             }
             let decode_seconds = decode_start.elapsed().as_secs_f64();
-            decoded.sort_by_key(|d| d.frame.sequence);
+            let mut paired: Vec<_> = decoded.into_iter().zip(sensor_stores).collect();
+            paired.sort_by_key(|(d, _)| d.info.sequence);
+            let (mut decoded, mut sensor_stores): (Vec<_>, Vec<_>) = paired.into_iter().unzip();
             if mode == Mode::Denoise {
                 // Burst indices may start anywhere or be absent. Pixel Shift
                 // modes retain strict source-shot completeness validation.
                 for (index, decoded) in decoded.iter_mut().enumerate() {
-                    decoded.frame.sequence = index + 1;
+                    decoded.info.sequence = index + 1;
+                    if let Some(store) = &mut sensor_stores[index] {
+                        store.set_sequence(index + 1);
+                    }
                 }
             }
             let source_crop = decoded[0].source_crop();
-            let sensor_size = (decoded[0].frame.width, decoded[0].frame.height);
+            let sensor_size = (decoded[0].info.width, decoded[0].info.height);
             diagnostics.record(format!(
                 "reference sensor: {}x{}; preferred crop: {:?}",
                 sensor_size.0, sensor_size.1, source_crop
@@ -271,7 +323,7 @@ fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
             color
                 .photo_metadata
                 .model
-                .get_or_insert_with(|| decoded[0].frame.model.clone());
+                .get_or_insert_with(|| decoded[0].info.model.clone());
             color
                 .photo_metadata
                 .make
@@ -285,19 +337,45 @@ fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
                 },
                 color.white_balance
             ))?;
-            let frames = decoded.into_iter().map(|d| d.frame).collect::<Vec<_>>();
-            diagnostics.record("merge and motion correction")?;
-            let source_buffer_bytes = frames
+            reference_frames.sort_by_key(|f| f.sequence);
+            if mode == Mode::Denoise {
+                for (i, frame) in reference_frames.iter_mut().enumerate() {
+                    frame.sequence = i + 1;
+                }
+            }
+            let frames = reference_frames;
+            drop(decoded);
+            let source_buffer_bytes = sensor_stores
                 .iter()
-                .map(|frame| frame.pixels.capacity() as u64 * 4)
+                .flatten()
+                .map(|s| s.resident_bytes())
+                .sum::<u64>()
+                + frames
+                    .iter()
+                    .map(|f| f.pixels.capacity() as u64 * 4)
+                    .sum::<u64>();
+            let scratch_bytes = sensor_stores
+                .iter()
+                .flatten()
+                .map(|s| s.scratch_bytes())
                 .sum::<u64>();
+            let stores: Vec<Box<dyn SensorSource>> = sensor_stores
+                .into_iter()
+                .flatten()
+                .map(|s| Box::new(s) as Box<dyn SensorSource>)
+                .collect();
+            diagnostics.record("merge and motion correction")?;
             let options = Options {
                 mode,
                 motion_threshold: spec.motion_threshold,
                 alignment_radius: spec.alignment_radius,
             };
             let plan_start = Instant::now();
-            let prepared = PreparedMerge::new(&frames, profile, &options)?;
+            let prepared = if *reference {
+                PreparedMerge::new(&frames, profile, &options)?
+            } else {
+                PreparedMerge::from_sources(&stores, profile, &options)?
+            };
             let validation_alignment_seconds = plan_start.elapsed().as_secs_f64();
             let geometry = prepared.report(0);
             let (width, height) = prepared.dimensions();
@@ -369,9 +447,11 @@ fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
                 Some((_, report)) => prepared.report(report.fallback_pixels),
                 None => prepared.report(output_stats.fallback_pixels),
             };
+            let peak_source_region_bytes = prepared.peak_source_region_bytes();
             drop(reference_result);
             drop(prepared);
             drop(frames);
+            drop(stores);
             let resources = metrics::snapshot();
             diagnostics.record(format!(
                 "alignment residuals (sensor pixels): {:?}",
@@ -384,7 +464,17 @@ fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
                 report.fallback_pixels as f64 / (width * height) as f64 * 100.0,
                 color.default_crop
             ))?;
-            let execution = json!({"streamed_output":!reference,"source_storage":"normalized_f32_ram",
+            let storage_name = if *reference {
+                "normalized_f32_ram"
+            } else {
+                match (*fixtures, spec.source_storage) {
+                    (true, SourceStorage::Ram) => "float32_ram",
+                    (true, SourceStorage::Disk) => "float32_disk",
+                    (false, SourceStorage::Ram) => "packed_u16_ram",
+                    (false, SourceStorage::Disk) => "packed_u16_disk",
+                }
+            };
+            let execution = json!({"streamed_output":!reference,"source_storage":storage_name,"scratch_bytes":scratch_bytes,"peak_source_region_bytes":peak_source_region_bytes,
                 "source_buffer_bytes":source_buffer_bytes,"peak_output_region_bytes":output_stats.peak_region_pixels*3*4,
                 "compression":spec.compression,"strip_rows":spec.strip_rows,
                 "timings":{"preflight_seconds":preflight_seconds,"decode_seconds":decode_seconds,

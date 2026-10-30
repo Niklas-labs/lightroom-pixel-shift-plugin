@@ -2,7 +2,9 @@
 use anyhow::{Result, ensure};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
+mod sensor;
 mod streaming;
+pub use sensor::{SensorInfo, SensorSource};
 pub use streaming::{ImageSource, PreparedMerge, Region, RenderedRegion};
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]

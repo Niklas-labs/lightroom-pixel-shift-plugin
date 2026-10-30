@@ -29,9 +29,9 @@ without changing your library filters or current collection. A separate menu
 handles RAW burst denoise. Failed jobs and diagnostic logs remain beside the
 output for troubleshooting.
 
-Start with four shots; sixteen-shot sources still require several GB of RAM.
+Start with four shots. Choose **Memory: Disk (less RAM)** to store sources temporarily on disk.
 The plugin now outputs experimental linear DNG. Adaptive Color/B&W and AI Denoise
-compatibility need Lightroom host testing. Output reconstruction now streams bounded regions; packed/disk-backed input storage is still pending.
+compatibility need Lightroom host testing. Output reconstruction and source normalization use bounded regions with packed RAM/disk input storage.
 Lossless Deflate compression is now the default. Uncompressed equivalents are
 about 0.73 GB at 61 MP or 2.9 GB at 244 MP; compressed size depends on content.
 
@@ -123,11 +123,13 @@ redundant same-color observations (principally green); it cannot provide a
 16-frame noise reduction gain for every RGB channel. Ordinary burst denoise
 averages all aligned frames before color rendering.
 
-The CLI keeps decoded float32 source frames in RAM and streams output regions
-without a full reconstructed RGB buffer. Sixteen 61 MP sources alone occupy
-about 3.9 GB, plus decoder/allocator working memory. Packed/disk-backed sources
-and an enforced global memory budget remain pending; full-size peak memory is
-not yet measured. See [streaming and measurements](docs/streaming.md). TIFF is classic TIFF, RGB16
+The CLI stores native `u16` sensor samples in RAM (default) or temporary disk
+files, then normalizes source row windows and streams output regions. Sixteen
+61 MP sources occupy about 1.95 GB of packed RAM, or that amount of scratch disk.
+Disk mode retains source windows and one decoder's working memory instead of all
+sources. Neither mode allocates a complete reconstructed RGB buffer. Whole-frame
+RAW decoding and allocator overhead remain; a hard memory budget and full-size
+peak measurements are pending. See [streaming and measurements](docs/streaming.md). TIFF is classic TIFF, RGB16
 with sRGB transfer and ICC profile; highlights are clipped, with no tone mapping.
 The merged buffer excludes a border of `4 + alignment_radius` sensor pixels on
 all sides. DNG DefaultCrop additionally maps the source decoder's preferred crop
@@ -146,7 +148,7 @@ camera RGB, reciprocal as-shot WB, A/D65 matrices where available, black/white l
 output crop and standard source EXIF. Only its small preview is developed to sRGB.
 It reconstructs bounded regions directly into lossless float32 strips and
 collects a small preview from those pixels. TIFF is streamed similarly. Sources
-remain in RAM until reconstruction and writing finish.
+are read through interchangeable packed RAM/disk stores during reconstruction.
 Use a `.tif`/`.tiff` output path in CLI jobs for the existing TIFF renderer.
 Adaptive profile, AI Denoise and lens-correction compatibility must be tested in
 Lightroom. DNG does not contain copied Sony MakerNotes or correction opcodes.

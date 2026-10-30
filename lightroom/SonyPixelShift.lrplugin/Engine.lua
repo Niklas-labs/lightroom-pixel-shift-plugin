@@ -34,6 +34,9 @@ function M.checkInfo(info, manifest)
     for _, compression in ipairs(info.output_compressions or {}) do
         if compression == 'lossless' then supportsLossless = true end
     end
+    local stores = {}
+    for _, storage in ipairs(info.source_storages or {}) do stores[storage] = true end
+    assert(stores.ram and stores.disk, 'This engine lacks packed source stores. Reinstall the complete current plugin package.')
     assert(info.streamed_output == true and supportsLossless, 'This engine lacks streamed lossless output. Reinstall the complete current plugin package.')
     assert(supportsDng, 'This engine cannot write DNG. Reinstall the complete current plugin package.')
     assert(info.autodetection == true, 'This engine does not support automatic capture detection. Reinstall the complete current plugin package.')

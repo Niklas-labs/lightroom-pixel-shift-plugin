@@ -70,9 +70,9 @@ def check(engine):
             with tifffile.TiffFile(root / f'{mode}.dng') as initial:
                 expected_pixels=initial.pages[0].asarray().view(np.uint32).copy()
                 expected_preview=initial.pages[0].pages[0].asarray().copy()
-            for reference,compression,rows in [(True,'lossless',17),(False,'none',1),(False,'lossless',256)]:
+            for reference,compression,rows,storage in [(True,'lossless',17,'ram'),(False,'none',1,'ram'),(False,'lossless',256,'ram'),(False,'lossless',17,'disk')]:
                 spec=dict(job,mode=mode,inputs=job['inputs'] if mode=='sixteen' else job['inputs'][:4],
-                    output=f'{mode}-{reference}-{compression}-{rows}.dng',compression=compression,strip_rows=rows)
+                    output=f'{mode}-{reference}-{compression}-{rows}-{storage}.dng',compression=compression,strip_rows=rows,source_storage=storage,scratch_directory=str(root))
                 path=root / 'variant-job.json'
                 path.write_text(json.dumps(spec))
                 command=[str(engine),'merge','--fixtures','--job',str(path)]
@@ -81,6 +81,10 @@ def check(engine):
                 report=json.loads(run.stdout)
                 assert report['execution']['streamed_output'] == (not reference)
                 assert report['execution']['compression'] == compression
+                assert report['execution']['source_storage'] == ('normalized_f32_ram' if reference else f'float32_{storage}')
+                if storage == 'disk':
+                    assert report['execution']['source_buffer_bytes'] == 0
+                    assert report['execution']['scratch_bytes'] > 0
                 assert report['execution']['peak_output_region_bytes'] <= expected_pixels.shape[1]*min(rows,expected_pixels.shape[0])*12
                 assert report['execution']['resources']['peak_resident_bytes'] > 0
                 with tifffile.TiffFile(root / spec['output']) as variant:

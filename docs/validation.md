@@ -121,3 +121,10 @@ Performance assertions are structural (maximum region size, no repeated preview
 reconstruction); OS RSS/time comparisons are recorded benchmarks, not flaky CI
 thresholds. See [streaming](streaming.md). Full-size source-memory and Lightroom
 compressed-output acceptance remain required.
+
+Packed stores: native-u16 RAM/disk tests require bitwise equality against the
+normalized reference across CFA phases, odd dimensions, motion thresholds and
+region seams. CLI and extracted-package tests cover scratch selection, identical
+DNG output, cleanup, failure after ingestion and invalid options. Float fixtures
+remain float32 in scratch; only native integer tests prove packing. Real ARW
+peak memory/speed and Lightroom RAM/disk comparisons remain manual gates.

@@ -13,7 +13,9 @@ end
 assert(engine.command('C:\\User Files\\engine.exe', {'merge', '--job', 'C:\\写真\\job.json'}, true) ==
     '""C:\\User Files\\engine.exe" "merge" "--job" "C:\\写真\\job.json""')
 local job = json.decode(p.job({'a"b.ARW', 'C:\\写真\\x.ARW'}, 'b.tif', 'four'))
-assert(job.camera == "auto")
+assert(job.camera == "auto" and job.source_storage == 'ram')
+assert(json.decode(p.job({'x.ARW'}, 'out.dng', 'auto', 'disk')).source_storage == 'disk')
+assert(not pcall(p.job, {'x.ARW'}, 'out.dng', 'auto', 'bad'))
 assert(job.version == 1 and job.inputs[1] == 'a"b.ARW' and job.inputs[2] == 'C:\\写真\\x.ARW')
 assert(json.decode('"\\uD83D\\uDC3B"') == '\240\159\144\187')
 assert(json.decode('{"null":null,"false":false,"n":-1.25e2}').n == -125)
@@ -25,10 +27,10 @@ assert(engine.launchError(126, false):find('Privacy & Security', 1, true))
 assert(not engine.launchError(126, true):find('Privacy & Security', 1, true))
 local manifest = {protocol_version=1, engine_version='0.1.0'}
 engine.checkManifest(manifest)
-engine.checkInfo({protocol_version=1, engine_version='0.1.0',camera_models={'ILCE-7CR'},autodetection=true,output_formats={'dng','tiff'},streamed_output=true,output_compressions={'lossless','none'}}, manifest)
+engine.checkInfo({protocol_version=1, engine_version='0.1.0',camera_models={'ILCE-7CR'},autodetection=true,output_formats={'dng','tiff'},source_storages={'ram','disk'},streamed_output=true,output_compressions={'lossless','none'}}, manifest)
 assert(not pcall(engine.checkManifest, {protocol_version=2,engine_version='0.1.0'}))
 assert(not pcall(engine.checkInfo, {protocol_version=1, engine_version='0.1.0',camera_models={'ILCE-7CR'},autodetection=true}, manifest))
-assert(not pcall(engine.checkInfo, {protocol_version=1,engine_version='9.0',camera_models={'ILCE-7CR'},autodetection=true,output_formats={'dng','tiff'},streamed_output=true,output_compressions={'lossless','none'}}, manifest))
+assert(not pcall(engine.checkInfo, {protocol_version=1,engine_version='9.0',camera_models={'ILCE-7CR'},autodetection=true,output_formats={'dng','tiff'},source_storages={'ram','disk'},streamed_output=true,output_compressions={'lossless','none'}}, manifest))
 local info = dofile('lightroom/SonyPixelShift.lrplugin/Info.lua')
 assert(#info.LrLibraryMenuItems == 2 and info.LrExportMenuItems == nil)
 for _, menu in ipairs({info.LrLibraryMenuItems}) do

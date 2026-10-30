@@ -36,8 +36,9 @@ Menu commands are registered under **Library → Plug-in Extras** only.
 
 The production CLI reconstructs each output band as the writer requests it; no
 full reconstructed RGB image is allocated. The preview is collected from these
-same bands. Inputs still remain in float32 RAM through processing: this is not a
-fully bounded-memory source pipeline. Lossless compression preserves sample bits;
+same bands. Native u16 sources use packed RAM/disk stores, with normalized
+row windows and CFA-aware halos. One-frame RAW decoding and allocator overhead
+remain; there is no hard process memory cap yet. Lossless compression preserves sample bits;
 `compression: none` produces an uncompressed diagnostic DNG. See
 [streaming architecture and measurements](streaming.md).
 

@@ -75,6 +75,7 @@ def smoke_test(archive, expected_platform, expected_machine=None):
         assert info['protocol_version'] == manifest['protocol_version'] == 1
         assert info['engine_version'] == manifest['engine_version']
         assert 'dng' in info['output_formats']
+        assert info['source_storages'] == ['ram','disk']
         assert info['streamed_output'] and 'lossless' in info['output_compressions']
         assert info['metadata_backend'] == manifest['metadata_backend']
         assert info['camera_profile_schema_version'] == 1
@@ -110,6 +111,17 @@ def smoke_test(archive, expected_platform, expected_machine=None):
         assert output.stat().st_size > 100
         assert output.read_bytes()[:4] in (b'II*\0', b'MM\0*')
         original_digest = hashlib.sha256(output.read_bytes()).hexdigest()
+        disk_spec=json.loads((demo / 'job.json').read_text(encoding='utf-8'))
+        disk_spec.update(source_storage='disk',scratch_directory=str(root),output='disk.dng',strip_rows=7)
+        disk_job=demo / 'disk-job.json'
+        disk_job.write_text(json.dumps(disk_spec),encoding='utf-8')
+        disk_run=run_engine(engine,['merge','--fixtures','--job',disk_job],env,check=True)
+        disk_report=json.loads(disk_run.stdout)
+        assert disk_report['execution']['source_storage']=='float32_disk'
+        assert disk_report['execution']['source_buffer_bytes']==0
+        assert disk_report['execution']['scratch_bytes']>0
+        assert (demo / 'disk.dng').stat().st_size>100
+
         failure_file = root / 'failed-result.json'
         repeat = run_engine(engine, ['merge', '--fixtures', '--job', demo / 'job.json',
                                     '--result', failure_file, '--log', log_file], env)

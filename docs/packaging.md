@@ -67,7 +67,8 @@ command. Output goes to `dist/`; the staged `.lrplugin` is under the platform
 subdirectory, and distribution ZIP/checksum files are at the top level.
 
 The current package uses experimental lossless linear DNG with streamed output
-regions; normalized source frames still remain in RAM.
+regions and packed u16 RAM/disk source stores. The merge dialog offers a memory
+choice; scratch disk mode avoids retaining all decoded frames.
 TIFF remains available through CLI jobs. Linux package gates also compare DNG
 samples/calibration/preview in independent tifffile and LibRaw readers for all
 three merge modes. Lightroom host acceptance, compression, tiled processing and

@@ -291,7 +291,7 @@ fn streamed_execution_reports_bounds_resources_and_validates_options() {
     let record: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     let execution = &record["execution"];
     assert_eq!(execution["streamed_output"], true);
-    assert_eq!(execution["source_storage"], "normalized_f32_ram");
+    assert_eq!(execution["source_storage"], "float32_ram");
     assert_eq!(execution["peak_output_region_bytes"], 48 * 7 * 3 * 4);
     assert_eq!(execution["timings"]["output"]["regions"], 5);
     assert!(
@@ -322,4 +322,70 @@ fn streamed_execution_reports_bounds_resources_and_validates_options() {
             .status
             .success()
     );
+}
+
+#[test]
+fn disk_sources_are_lossless_and_release_scratch_on_success_and_failure() {
+    let (dir, job) = setup("sixteen");
+    let scratch = dir.path().join("scratch space");
+    fs::create_dir(&scratch).unwrap();
+    let mut spec: serde_json::Value = serde_json::from_slice(&fs::read(&job).unwrap()).unwrap();
+    let mut outputs = Vec::new();
+    for storage in ["ram", "disk"] {
+        spec["source_storage"] = json!(storage);
+        spec["scratch_directory"] = json!("scratch space");
+        spec["strip_rows"] = json!(3);
+        spec["output"] = json!(format!("{storage}.dng"));
+        fs::write(&job, serde_json::to_vec(&spec).unwrap()).unwrap();
+        let out = Command::new(env!("CARGO_BIN_EXE_sony-pixelshift"))
+            .args(["merge", "--fixtures", "--job"])
+            .arg(&job)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let record: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        if storage == "disk" {
+            assert_eq!(record["execution"]["source_buffer_bytes"], 0);
+            assert!(record["execution"]["scratch_bytes"].as_u64().unwrap() > 0);
+        }
+        outputs.push(fs::read(dir.path().join(format!("{storage}.dng"))).unwrap());
+        assert_eq!(fs::read_dir(&scratch).unwrap().count(), 0);
+    }
+    assert_eq!(outputs[0], outputs[1]);
+    // Alignment validation fails only after all stores have been ingested.
+    spec["alignment_radius"] = json!(9);
+    spec["output"] = json!("failure.dng");
+    fs::write(&job, serde_json::to_vec(&spec).unwrap()).unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_sony-pixelshift"))
+        .args(["merge", "--fixtures", "--job"])
+        .arg(&job)
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    assert!(!dir.path().join("failure.dng").exists());
+    assert_eq!(fs::read_dir(&scratch).unwrap().count(), 0);
+    spec["scratch_directory"] = json!("missing scratch");
+    fs::write(&job, serde_json::to_vec(&spec).unwrap()).unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_sony-pixelshift"))
+        .args(["merge", "--fixtures", "--job"])
+        .arg(&job)
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stderr)
+            .contains("scratch_directory must be an existing directory")
+    );
+    spec["source_storage"] = json!("auto");
+    fs::write(&job, serde_json::to_vec(&spec).unwrap()).unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_sony-pixelshift"))
+        .args(["merge", "--fixtures", "--job"])
+        .arg(&job)
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
 }

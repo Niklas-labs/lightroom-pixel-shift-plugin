@@ -45,7 +45,7 @@ local ok, problem = pcall(function()
     write(base .. '/plugin/bin/sony-pixelshift', 'mock executable')
     write(base .. '/plugin/manifest.json', '{"protocol_version":1,"engine_version":"0.1.0"}')
     for i=1,16 do write(base .. '/DSC' .. string.format('%05d', i) .. '.ARW', 'mock raw') end
-    for _, scenario in ipairs({'success', 'sixteen', 'denoise', 'options-cancel', 'filtered-selection', 'selection-error', 'unconfirmed-import', 'engine-failure', 'execute-error', 'launch-failure', 'bad-handshake', 'import-failure', 'catalog-timeout', 'wrong-output'}) do
+    for _, scenario in ipairs({'success', 'disk', 'sixteen', 'denoise', 'options-cancel', 'filtered-selection', 'selection-error', 'unconfirmed-import', 'engine-failure', 'execute-error', 'launch-failure', 'bad-handshake', 'import-failure', 'catalog-timeout', 'wrong-output'}) do
         local state = {imports={},dialogs={},commands={}, registry={}, queue={}, captions={}}
         local denoise = scenario == 'denoise'
         local count = scenario == 'sixteen' and 16 or 4
@@ -106,9 +106,11 @@ local ok, problem = pcall(function()
                 end
                 return scope
             end,
-            LrView={osFactory=function() return {control_spacing=function() return 8 end,static_text=function(_, t) return t end,column=function(_, t) return t end} end},
+            LrObservableTable={makePropertyTable=function() return {} end},
+            LrView={bind=function(key) return key end,osFactory=function() return {control_spacing=function() return 8 end,static_text=function(_, t) return t end,row=function(_,t) return t end,popup_menu=function(_,t) return t end,column=function(_, t) return t end} end},
             LrDialogs={presentModalDialog=function(options)
                 state.options = options
+                if scenario == 'disk' then options.contents.bind_to.sourceStorage = 'disk' end
                 assert(options.contents[2].title:find(denoise and 'Less noise' or (count == 16 and 'Higher resolution' or 'Better color detail'), 1, true))
                 return scenario == 'options-cancel' and 'cancel' or 'ok'
             end,runSavePanel=function() error('Unexpected output picker') end,
@@ -142,13 +144,13 @@ local ok, problem = pcall(function()
                         if scenario == 'launch-failure' then return 126 end
                         local path=assert(command:match("'%-?%-output' '([^']+)'"))
                         write(path, '{"protocol_version":1,"engine_version":"' ..
-                            (scenario == 'bad-handshake' and '9.0' or '0.1.0') .. '","camera_models":["ILCE-7CR"],"autodetection":true,"output_formats":["dng","tiff"],"streamed_output":true,"output_compressions":["lossless","none"]}')
+                            (scenario == 'bad-handshake' and '9.0' or '0.1.0') .. '","camera_models":["ILCE-7CR"],"autodetection":true,"output_formats":["dng","tiff"],"source_storages":["ram","disk"],"streamed_output":true,"output_compressions":["lossless","none"]}')
                         return 0
                     end
                     state.job=assert(command:match("'%-%-job' '([^']+)'"))
                     state.result=assert(command:match("'%-%-result' '([^']+)'"))
                     state.log=assert(command:match("'%-%-log' '([^']+)'"))
-                    local job=Json.decode(read(state.job)); assert(job.mode == (denoise and 'denoise' or 'auto') and job.camera == 'auto'); assert(job.inputs[1] == base .. '/DSC00001.ARW')
+                    local job=Json.decode(read(state.job)); assert(job.source_storage == (scenario == 'disk' and 'disk' or 'ram')); assert(job.mode == (denoise and 'denoise' or 'auto') and job.camera == 'auto'); assert(job.inputs[1] == base .. '/DSC00001.ARW')
                     if scenario == 'execute-error' then error('process launch raised an exception') end
                     state.inExecute = true
                     for i=1,count do
@@ -184,7 +186,7 @@ local ok, problem = pcall(function()
         scheduler(state.queue)
         if scenario == 'options-cancel' then assert(not state.scope)
         else assert(state.scope.ended and state.scope.closeCount == 1) end
-        if scenario == 'success' or scenario == 'sixteen' or scenario == 'denoise' or scenario == 'filtered-selection' or scenario == 'selection-error' then
+        if scenario == 'success' or scenario == 'disk' or scenario == 'sixteen' or scenario == 'denoise' or scenario == 'filtered-selection' or scenario == 'selection-error' then
             local seen = {}
             for _, update in ipairs(state.captions) do
                 if update.duringExecute then seen[update.text]=true end
@@ -229,4 +231,4 @@ local ok, problem = pcall(function()
 end)
 cleanup()
 assert(ok, problem)
-print('Plugin mocked workflow checks passed (14 scenarios, with cooperative engine/progress scheduling)')
+print('Plugin mocked workflow checks passed (15 scenarios, with cooperative engine/progress scheduling)')

@@ -37,11 +37,11 @@ def benchmark(args, root):
     gc.collect()
     reports=[]
     outputs=[]
-    for label, reference, compression in [('reference-none',True,'none'),('streamed-none',False,'none'),('streamed-lossless',False,'lossless')]:
+    for label, reference, compression,storage in [('reference-none',True,'none','ram'),('streamed-none',False,'none','ram'),('streamed-lossless',False,'lossless','ram'),('disk-lossless',False,'lossless','disk')]:
         output=root / f'{label}.dng'
         if output.exists(): raise ValueError(f'Benchmark output exists: {output}')
         spec={'version':1,'camera':'auto','mode':args.mode,'inputs':inputs,'output':output.name,
-              'alignment_radius':0,'motion_threshold':0,'compression':compression,'strip_rows':args.strip_rows}
+              'alignment_radius':0,'motion_threshold':0,'compression':compression,'strip_rows':args.strip_rows,'source_storage':storage,'scratch_directory':str(root)}
         job=root / f'{label}-job.json';job.write_text(json.dumps(spec))
         command=[str(args.engine.resolve()),'merge','--fixtures','--job',str(job)]
         if reference: command.append('--reference')
