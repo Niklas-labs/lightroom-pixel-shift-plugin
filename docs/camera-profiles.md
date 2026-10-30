@@ -1,9 +1,10 @@
 # Camera profile configuration
 
-`config/camera-profiles.json` is the source of truth for registered camera
+`config/camera-profiles.yaml` is the source of truth for registered camera
 capabilities. `config/camera-profiles.schema.json` is its JSON Schema (Draft
-2020-12). Editors can use the catalog's relative `$schema` reference for completion
-and validation. Runtime parsing rejects unknown fields and unsupported versions,
+2020-12), validating the parsed YAML document. The schema itself stays JSON.
+Editors can use the `yaml-language-server` directive at the top of the YAML file
+for completion and validation. Runtime parsing rejects unknown fields and unsupported versions,
 then validates model uniqueness, supported adapters, CFA and complete shift grids.
 CI validates the shipped catalog with the full JSON Schema validator as well.
 
@@ -52,15 +53,15 @@ responsibility; reference-test the variants claimed for each model.
 
 ## Loading and distribution
 
-The CLI loads `config/camera-profiles.json` beside the packaged `bin` directory.
+The CLI loads `config/camera-profiles.yaml` beside the packaged `bin` directory.
 Missing or invalid configuration in an installed plugin is an error. Standalone
-development binaries fall back to the same JSON embedded at build time, ensuring
+development binaries fall back to the same YAML embedded at build time, ensuring
 that they run outside the repository. For explicit testing:
 
 ```sh
-sony-pixelshift --camera-profiles /path/to/camera-profiles.json info
-sony-pixelshift --camera-profiles /path/to/camera-profiles.json cameras
-sony-pixelshift --camera-profiles /path/to/camera-profiles.json merge --job job.json
+sony-pixelshift --camera-profiles /path/to/camera-profiles.yaml info
+sony-pixelshift --camera-profiles /path/to/camera-profiles.yaml cameras
+sony-pixelshift --camera-profiles /path/to/camera-profiles.yaml merge --job job.json
 python3 scripts/test-camera-schema.py
 ```
 
@@ -79,4 +80,18 @@ Editing the catalog alone does not add a missing rawler decoder or calibration.
 4. Package and test through Lightroom before changing validation status.
 
 The original core SonyA7Cr implementation remains a regression reference. The
-production CLI uses the JSON profile for both detection and reconstruction.
+production CLI uses the YAML profile for both detection and reconstruction.
+
+## YAML conventions
+
+Use one document, string mapping keys, `true`/`false` for booleans, and compact
+`[x, y]` coordinate pairs. Comments and folded text are supported. Duplicate
+keys, custom tags, multiple documents, unknown fields and invalid values are
+rejected. Merge keys (`<<`) are not a supported inheritance mechanism. Quote
+strings that could be mistaken for numbers or booleans. `on`, `off`, `yes` and
+`no` are strings rather than YAML 1.1 boolean shortcuts.
+
+The Rust parser is `serde_yaml_ng`; no Python/YAML installation is needed by
+Lightroom users. Python schema/package tooling uses PyYAML with matching boolean
+and duplicate-key rules. Developer tooling requires `PyYAML==6.0.3` and
+`jsonschema==4.26.0`, installed by CI. These do not ship as runtime dependencies.

@@ -11,6 +11,8 @@ import subprocess
 import sys
 import tempfile
 import zipfile
+import yaml
+from camera_yaml import load_yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -74,7 +76,7 @@ def smoke_test(archive, expected_platform, expected_machine=None):
         assert info['engine_version'] == manifest['engine_version']
         assert info['metadata_backend'] == manifest['metadata_backend']
         assert info['camera_profile_schema_version'] == 1
-        assert info['camera_models'] == [c['model'] for c in json.loads((plugin / 'config' / 'camera-profiles.json').read_text(encoding='utf-8'))['cameras']]
+        assert info['camera_models'] == [c['model'] for c in load_yaml((plugin / 'config' / 'camera-profiles.yaml').read_text(encoding='utf-8'))['cameras']]
         assert any(word in info['metadata_backend'].lower() for word in ('native', 'rust'))
         demo = root / 'demo'
         python_env = dict(os.environ, PYTHONIOENCODING='utf-8')
@@ -108,11 +110,11 @@ def smoke_test(archive, expected_platform, expected_machine=None):
         assert failure['status'] == 'error' and 'already exists' in failure['message']
         assert hashlib.sha256(output.read_bytes()).hexdigest() == original_digest
         assert log_file.read_text(encoding='utf-8').startswith(header)
-        catalog_file = plugin / 'config' / 'camera-profiles.json'
+        catalog_file = plugin / 'config' / 'camera-profiles.yaml'
         original_catalog = catalog_file.read_bytes()
-        bad_catalog = json.loads(original_catalog)
+        bad_catalog = load_yaml(original_catalog)
         bad_catalog['schema_version'] = 999
-        catalog_file.write_text(json.dumps(bad_catalog), encoding='utf-8')
+        catalog_file.write_text(yaml.safe_dump(bad_catalog), encoding='utf-8')
         invalid = run_engine(engine, ['info'], env)
         assert invalid.returncode != 0, 'Invalid bundled config must not fall back to embedded defaults'
         catalog_file.write_bytes(original_catalog)

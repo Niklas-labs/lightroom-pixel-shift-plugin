@@ -4,12 +4,13 @@ import copy
 import json
 from pathlib import Path
 from jsonschema import Draft202012Validator
+from camera_yaml import load_yaml
 
 root = Path(__file__).resolve().parents[1]
 schema = json.loads((root / 'config/camera-profiles.schema.json').read_text())
 Draft202012Validator.check_schema(schema)
 validator = Draft202012Validator(schema)
-config = json.loads((root / 'config/camera-profiles.json').read_text())
+config = load_yaml((root / 'config/camera-profiles.yaml').read_text())
 validator.validate(config)
 for change in ['version', 'unknown', 'scale', 'offset', 'duplicate', 'null']:
     bad = copy.deepcopy(config)
@@ -22,3 +23,12 @@ for change in ['version', 'unknown', 'scale', 'offset', 'duplicate', 'null']:
     else: camera['pixel_shift']['four'] = None
     assert not validator.is_valid(bad), change
 print('Camera catalog and JSON Schema checks passed')
+
+for text in ['schema_version: 1\nschema_version: 2', 'a: !unsupported value', 'a: 1\n---\na: 2']:
+    try:
+        load_yaml(text)
+    except Exception:
+        pass
+    else:
+        raise AssertionError('Invalid YAML accepted: ' + text)
+assert load_yaml('x: on')['x'] == 'on'

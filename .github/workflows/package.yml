@@ -16,7 +16,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: python -m pip install jsonschema==4.26.0
+      - run: python -m pip install jsonschema==4.26.0 PyYAML==6.0.3
       - run: python scripts/test-camera-schema.py
       - run: python scripts/test-package-unit.py
 
@@ -61,6 +61,7 @@ jobs:
           otool -L target/universal/sony-pixelshift
       - name: Package self-contained plugin
         run: python scripts/package-plugin.py --binary target/universal/sony-pixelshift --platform macos-universal --revision '${{ github.sha }}'
+      - run: python -m pip install PyYAML==6.0.3
       - name: Smoke-test extracted Apple Silicon package
         run: python scripts/test-package.py --archive-dir dist --platform macos-universal --machine arm64,aarch64
       - uses: actions/upload-artifact@v4
@@ -84,6 +85,7 @@ jobs:
         with:
           name: SonyPixelShift-macos-universal
           path: dist
+      - run: python -m pip install PyYAML==6.0.3
       - name: Smoke-test the same universal ZIP natively on Intel
         run: python scripts/test-package.py --archive-dir dist --platform macos-universal --machine x86_64,amd64
 
@@ -107,6 +109,7 @@ jobs:
         run: cargo build --release --locked --target x86_64-pc-windows-msvc -p pixelshift-cli
       - name: Package self-contained plugin
         run: python scripts/package-plugin.py --binary target/x86_64-pc-windows-msvc/release/sony-pixelshift.exe --platform windows-x86_64 --revision '${{ github.sha }}'
+      - run: python -m pip install PyYAML==6.0.3
       - name: Smoke-test extracted Windows package without PATH tools
         run: python scripts/test-package.py --archive-dir dist --platform windows-x86_64 --machine amd64,x86_64
       - uses: actions/upload-artifact@v4

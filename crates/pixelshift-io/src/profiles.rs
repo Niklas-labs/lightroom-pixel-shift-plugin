@@ -6,7 +6,7 @@ use std::{
     collections::HashSet,
     path::{Path, PathBuf},
 };
-const EMBEDDED: &str = include_str!("../../../config/camera-profiles.json");
+const EMBEDDED: &str = include_str!("../../../config/camera-profiles.yaml");
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Catalog {
@@ -42,9 +42,32 @@ pub struct Layout {
     pub output_scale: usize,
     pub offsets: Vec<[f32; 2]>,
 }
+fn validate_yaml(value: &serde_yaml_ng::Value) -> Result<()> {
+    use serde_yaml_ng::Value;
+    match value {
+        Value::Tagged(_) => anyhow::bail!("custom YAML tags are not supported"),
+        Value::Mapping(mapping) => {
+            for (key, value) in mapping {
+                ensure!(key.is_string(), "YAML mapping keys must be strings");
+                validate_yaml(value)?;
+            }
+        }
+        Value::Sequence(values) => {
+            for value in values {
+                validate_yaml(value)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
 impl Catalog {
     pub fn parse(text: &str) -> Result<Self> {
-        let raw: serde_json::Value = serde_json::from_str(text)?;
+        let yaml: serde_yaml_ng::Value =
+            serde_yaml_ng::from_str(text).context("invalid camera profile YAML")?;
+        validate_yaml(&yaml)?;
+        let raw: serde_json::Value = serde_json::to_value(yaml)
+            .context("camera profiles must use YAML with string keys and JSON-compatible values")?;
         if let Some(schema) = raw.get("$schema") {
             ensure!(schema.is_string(), "$schema must be a string");
         }
@@ -58,7 +81,8 @@ impl Catalog {
                 }
             }
         }
-        let catalog: Self = serde_json::from_str(text).context("invalid camera profile JSON")?;
+        let catalog: Self =
+            serde_json::from_value(raw).context("invalid camera profile YAML values")?;
         ensure!(
             catalog.schema_version == 1,
             "unsupported camera profile schema version"
@@ -142,7 +166,7 @@ impl Catalog {
             .parent()
             .and_then(Path::parent)
             .unwrap_or(Path::new("."));
-        let bundled: PathBuf = package.join("config/camera-profiles.json");
+        let bundled: PathBuf = package.join("config/camera-profiles.yaml");
         if bundled.exists() || package.join("manifest.json").exists() {
             Self::load(Some(&bundled))
         } else {
@@ -197,6 +221,24 @@ impl CameraProfile for Profile {
 mod tests {
     use super::*;
     #[test]
+    fn rejects_ambiguous_or_unsafe_yaml() {
+        for yaml in [
+            "schema_version: 1\nschema_version: 2\ncameras: []",
+            "schema_version: 1\ncameras: []\n---\nschema_version: 1\ncameras: []",
+            "schema_version: !custom 1\ncameras: []",
+            "1: cameras\nschema_version: 1",
+        ] {
+            assert!(Catalog::parse(yaml).is_err(), "accepted {yaml}");
+        }
+        let text = EMBEDDED.replace("denoise: true", "denoise: on");
+        assert!(
+            Catalog::parse(&text).is_err(),
+            "implicit YAML 1.1 booleans must not be accepted"
+        );
+        let text = EMBEDDED.replace("notes: >-", "notes: !custom >-");
+        assert!(Catalog::parse(&text).is_err());
+    }
+    #[test]
     fn bundled_matches_original_layout() {
         let c = Catalog::embedded().unwrap();
         let p = c.find("ILCE-7CR").unwrap();
@@ -208,7 +250,7 @@ mod tests {
     }
     #[test]
     fn rejects_invalid_profiles() {
-        let baseline: serde_json::Value = serde_json::from_str(EMBEDDED).unwrap();
+        let baseline: serde_json::Value = serde_yaml_ng::from_str(EMBEDDED).unwrap();
         for case in 0..7 {
             let mut v = baseline.clone();
             match case {
@@ -228,7 +270,10 @@ mod tests {
                 }
                 _ => v["cameras"][0]["pixel_shift"]["sixteen"]["output_scale"] = 1.into(),
             };
-            assert!(Catalog::parse(&v.to_string()).is_err(), "case {case}");
+            assert!(
+                Catalog::parse(&serde_yaml_ng::to_string(&v).unwrap()).is_err(),
+                "case {case}"
+            );
         }
     }
 }
