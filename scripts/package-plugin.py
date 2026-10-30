@@ -82,6 +82,7 @@ def build_package(binary, platform, output_dir, revision, metadata, info=None):
     plugin.mkdir(parents=True)
     for source in sorted((ROOT / 'lightroom' / PLUGIN_NAME).glob('*.lua')):
         shutil.copyfile(source, plugin / source.name)
+    shutil.copytree(ROOT / 'config', plugin / 'config')
     engine = plugin / 'bin' / PLATFORMS[platform]
     engine.parent.mkdir()
     shutil.copyfile(binary, engine)

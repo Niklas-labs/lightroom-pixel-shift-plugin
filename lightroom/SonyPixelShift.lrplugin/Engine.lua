@@ -25,9 +25,7 @@ function M.checkInfo(info, manifest)
     assert(type(info) == 'table' and info.protocol_version == M.protocolVersion, 'The engine uses an incompatible plugin protocol.')
     assert(info.engine_version == M.version, 'The engine and plugin versions do not match.')
     if manifest then assert(info.engine_version == manifest.engine_version, 'The engine does not match its package manifest.') end
-    local supported = false
-    for _, model in ipairs(info.camera_models or {}) do if model == 'ILCE-7CR' then supported = true end end
-    assert(supported, 'The engine does not support Sony a7CR.')
+    assert(type(info.camera_models) == 'table' and #info.camera_models > 0, 'The engine has no supported camera profiles.')
     assert(info.autodetection == true, 'This engine does not support automatic capture detection. Reinstall the complete current plugin package.')
 end
 function M.command(executable, args, windows)

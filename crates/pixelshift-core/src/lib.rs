@@ -81,7 +81,7 @@ impl Frame {
     }
 }
 
-/// Add another camera by implementing this trait and registering it at the CLI boundary.
+/// Sensor-layout abstraction; production profiles are loaded from the IO camera catalog.
 pub trait CameraProfile {
     fn model(&self) -> &str;
     fn shift(&self, mode: Mode, index: usize) -> (f32, f32);
@@ -206,6 +206,12 @@ pub fn merge(
     let shifts: Vec<_> = (0..frames.len())
         .map(|i| profile.shift(opts.mode, i))
         .collect();
+    ensure!(
+        shifts
+            .iter()
+            .all(|(x, y)| x.is_finite() && y.is_finite() && x.abs() <= 2.0 && y.abs() <= 2.0),
+        "unsupported or unsafe camera shift layout"
+    );
     let residual: Vec<_> = frames
         .iter()
         .enumerate()

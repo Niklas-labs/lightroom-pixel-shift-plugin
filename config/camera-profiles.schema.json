@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Pixel Shift camera profiles",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "cameras"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "cameras": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/camera"
+      }
+    }
+  },
+  "$defs": {
+    "four": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "output_scale",
+        "offsets"
+      ],
+      "properties": {
+        "output_scale": {
+          "const": 1
+        },
+        "offsets": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": {
+              "type": "number",
+              "enum": [
+                0,
+                1
+              ]
+            }
+          }
+        }
+      }
+    },
+    "sixteen": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "output_scale",
+        "offsets"
+      ],
+      "properties": {
+        "output_scale": {
+          "const": 2
+        },
+        "offsets": {
+          "type": "array",
+          "minItems": 16,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": {
+              "type": "number",
+              "enum": [
+                0,
+                0.5,
+                1,
+                1.5
+              ]
+            }
+          }
+        }
+      }
+    },
+    "camera": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "make",
+        "model",
+        "name",
+        "validation_status",
+        "decoder",
+        "metadata",
+        "calibration_source",
+        "cfa",
+        "denoise",
+        "pixel_shift",
+        "notes"
+      ],
+      "properties": {
+        "make": {
+          "const": "SONY"
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "validation_status": {
+          "enum": [
+            "experimental",
+            "validated"
+          ]
+        },
+        "decoder": {
+          "const": "sony_arw"
+        },
+        "metadata": {
+          "const": "sony_pixel_shift_v1"
+        },
+        "calibration_source": {
+          "const": "raw_metadata_and_rawler_catalog"
+        },
+        "cfa": {
+          "enum": [
+            "RGGB",
+            "BGGR",
+            "GRBG",
+            "GBRG"
+          ]
+        },
+        "denoise": {
+          "type": "boolean"
+        },
+        "notes": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pixel_shift": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "four": {
+              "$ref": "#/$defs/four"
+            },
+            "sixteen": {
+              "$ref": "#/$defs/sixteen"
+            }
+          }
+        }
+      }
+    }
+  }
+}

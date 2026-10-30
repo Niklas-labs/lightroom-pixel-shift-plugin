@@ -53,7 +53,7 @@ function M.start(denoise)
                         view:static_text { title = 'Result: ' .. summary.result },
                         view:static_text { title = 'Best for: ' .. summary.capture },
                         view:static_text { title = 'Output: 16-bit TIFF' },
-                        view:static_text { title = 'Camera: Sony a7CR | Experimental' },
+                        view:static_text { title = 'Camera: Auto-detected | Experimental' },
                     },
                     actionVerb = 'Choose output', cancelVerb = 'Cancel',
                 }

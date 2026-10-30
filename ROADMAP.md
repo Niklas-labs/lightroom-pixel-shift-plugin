@@ -54,8 +54,9 @@ files can be incomplete parts of different captures.
   Shift selection into denoise.
 - [ ] Obtain sensor dimensions, active area/crop, CFA pattern/origin, bit depth,
   black/white levels, WB and camera matrices from decoder metadata/calibration.
-- [ ] Replace hardcoded a7CR checks in the CLI/decoder with registered camera
-  capabilities. Reuse verified shift layouts across models where appropriate.
+- [x] Replace hardcoded a7CR checks in the CLI/decoder with registered camera
+  capabilities using a versioned JSON catalog and JSON Schema. Reuse verified
+  shift layouts across models where appropriate.
 - [ ] Keep commanded shift direction/order, mode availability, metadata quirks
   and supported RAW variants in explicit capabilities where they cannot be
   reliably derived. Dimensions cannot establish these properties or color/noise

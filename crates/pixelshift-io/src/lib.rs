@@ -10,6 +10,7 @@ use std::{
 use tiff::encoder::{TiffEncoder, colortype};
 
 mod metadata;
+pub mod profiles;
 pub use metadata::{PixelShiftInfo, inspect_capture, metadata_backend};
 
 #[derive(Debug, PartialEq, Deserialize, Serialize)]
@@ -114,8 +115,8 @@ pub fn decode(path: &Path, fixture: bool) -> Result<Decoded> {
     let sequence = capture.sequence.unwrap_or(0);
     let raw = rawler::decode_file(path).with_context(|| format!("decoding {}", path.display()))?;
     ensure!(
-        raw.cpp == 1 && raw.model == "ILCE-7CR",
-        "initial RAW adapter supports ILCE-7CR Bayer ARW only"
+        raw.cpp == 1 && raw.make.eq_ignore_ascii_case("SONY"),
+        "RAW adapter supports Sony Bayer ARW only"
     );
     let config = match &raw.photometric {
         rawler::rawimage::RawPhotometricInterpretation::Cfa(c) => c,

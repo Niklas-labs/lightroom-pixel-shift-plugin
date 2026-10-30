@@ -186,3 +186,53 @@ fn auto_and_omitted_configuration_detect_both_supported_counts() {
         }
     }
 }
+
+#[test]
+fn profile_override_controls_model_capabilities_and_cfa() {
+    let baseline: serde_json::Value =
+        serde_json::from_str(include_str!("../../../config/camera-profiles.json")).unwrap();
+    for case in 0..4 {
+        let (dir, job) = setup(if case == 0 { "denoise" } else { "four" });
+        let mut config = baseline.clone();
+        match case {
+            0 => config["cameras"][0]["denoise"] = json!(false),
+            1 => config["cameras"][0]["cfa"] = json!("GBRG"),
+            2 => config["schema_version"] = json!(99),
+            _ => {
+                config["cameras"][0]["model"] = json!("TEST-CAMERA");
+                let mut spec: serde_json::Value =
+                    serde_json::from_slice(&fs::read(&job).unwrap()).unwrap();
+                spec["camera"] = json!("auto");
+                fs::write(&job, serde_json::to_vec(&spec).unwrap()).unwrap();
+                for i in 1..=4 {
+                    let p = dir.path().join(format!("sensor-{i}.json"));
+                    let mut f: serde_json::Value =
+                        serde_json::from_slice(&fs::read(&p).unwrap()).unwrap();
+                    f["frame"]["model"] = json!("TEST-CAMERA");
+                    fs::write(p, serde_json::to_vec(&f).unwrap()).unwrap();
+                }
+            }
+        }
+        let path = dir.path().join("profiles.json");
+        fs::write(&path, serde_json::to_vec(&config).unwrap()).unwrap();
+        let run = Command::new(env!("CARGO_BIN_EXE_sony-pixelshift"))
+            .arg("--camera-profiles")
+            .arg(path)
+            .args(["merge", "--fixtures", "--job"])
+            .arg(job)
+            .output()
+            .unwrap();
+        if case == 3 {
+            assert!(
+                run.status.success(),
+                "{}",
+                String::from_utf8_lossy(&run.stderr)
+            );
+            let result: serde_json::Value = serde_json::from_slice(&run.stdout).unwrap();
+            assert_eq!(result["detected"]["camera"], "TEST-CAMERA");
+        } else {
+            assert!(!run.status.success(), "case {case}");
+            assert!(!dir.path().join("result.tif").exists());
+        }
+    }
+}

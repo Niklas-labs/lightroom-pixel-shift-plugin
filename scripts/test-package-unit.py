@@ -53,6 +53,8 @@ class PackagingTests(unittest.TestCase):
             self.assertFalse(manifest['notarized'])
             self.assertIn('SonyPixelShift.lrplugin/Info.lua', zipped.namelist())
             self.assertIn('INSTALL.txt', zipped.namelist())
+            self.assertIn('SonyPixelShift.lrplugin/config/camera-profiles.json', zipped.namelist())
+            self.assertIn('SonyPixelShift.lrplugin/config/camera-profiles.schema.json', zipped.namelist())
             self.assertFalse(any('/target/' in name or '/.cargo/' in name for name in zipped.namelist()))
         checksum = archive.with_suffix('.zip.sha256').read_text(encoding='ascii').split()[0]
         self.assertEqual(checksum, hashlib.sha256(archive.read_bytes()).hexdigest())

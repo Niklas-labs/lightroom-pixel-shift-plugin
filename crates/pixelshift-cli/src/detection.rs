@@ -1,6 +1,6 @@
 use anyhow::{Context, Result, ensure};
 use pixelshift_core::Mode;
-use pixelshift_io::Capture;
+use pixelshift_io::{Capture, profiles::Catalog};
 use std::{collections::HashSet, path::PathBuf};
 
 pub fn mode(requested: Option<&str>, count: usize) -> Result<Mode> {
@@ -30,24 +30,31 @@ pub fn preflight(
     paths: &mut [PathBuf],
     mode: Mode,
     requested_camera: Option<&str>,
+    catalog: &Catalog,
 ) -> Result<String> {
     let captures = paths
         .iter()
         .map(|p| pixelshift_io::inspect_capture(p))
         .collect::<Result<Vec<_>>>()?;
-    let camera = validate(&captures, mode, requested_camera)?;
+    let camera = validate(&captures, mode, requested_camera, catalog)?;
     let mut indices: Vec<_> = (0..paths.len()).collect();
     indices.sort_by_key(|i| captures[*i].sequence.unwrap_or(0));
     let ordered: Vec<_> = indices.iter().map(|i| paths[*i].clone()).collect();
     paths.clone_from_slice(&ordered);
     Ok(camera)
 }
-fn validate(captures: &[Capture], mode: Mode, requested: Option<&str>) -> Result<String> {
+fn validate(
+    captures: &[Capture],
+    mode: Mode,
+    requested: Option<&str>,
+    catalog: &Catalog,
+) -> Result<String> {
     let first = captures.first().context("no sources")?;
     let camera = first.model.as_deref().context("missing RAW camera model")?;
+    let profile = catalog.find(camera)?;
     ensure!(
-        camera == "ILCE-7CR",
-        "unsupported camera {camera}; supported: Sony a7CR (ILCE-7CR)"
+        profile.supports(mode),
+        "camera profile does not support selected mode"
     );
     ensure!(
         requested.is_none_or(|r| r == "auto" || r == camera),
@@ -121,7 +128,13 @@ mod tests {
         for n in [4, 16] {
             let c = captures(n);
             assert_eq!(
-                validate(&c, mode(None, n).unwrap(), None).unwrap(),
+                validate(
+                    &c,
+                    mode(None, n).unwrap(),
+                    None,
+                    &Catalog::embedded().unwrap()
+                )
+                .unwrap(),
                 "ILCE-7CR"
             );
         }
@@ -141,8 +154,19 @@ mod tests {
                 5 => c[1].pixel_shift = None,
                 _ => c[1].iso = Some(200.),
             };
-            assert!(validate(&c, Mode::Four, None).is_err(), "case {case}");
+            assert!(
+                validate(&c, Mode::Four, None, &Catalog::embedded().unwrap()).is_err(),
+                "case {case}"
+            );
         }
-        assert!(validate(&captures(4), Mode::Four, Some("other")).is_err());
+        assert!(
+            validate(
+                &captures(4),
+                Mode::Four,
+                Some("other"),
+                &Catalog::embedded().unwrap()
+            )
+            .is_err()
+        );
     }
 }

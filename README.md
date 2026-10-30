@@ -82,6 +82,16 @@ cargo run --locked -p pixelshift-cli -- merge --fixtures --job /tmp/pixelshift-d
 `--fixtures` explicitly enables synthetic JSON sensor inputs; the Lightroom
 plugin never enables it. See integration tests for the schema.
 
+## Camera configuration
+
+Registered model capabilities and chronological shift patterns live in
+[config/camera-profiles.json](config/camera-profiles.json), with a
+[JSON Schema](config/camera-profiles.schema.json). Detection and reconstruction
+use the same validated catalog, bundled inside the plugin. See
+[the configuration guide](docs/camera-profiles.md) for fields, loading rules and
+adding a model. Only the a7CR is registered initially; RAW calibration stays with
+the decoder.
+
 ## Implemented and next
 
 See [ROADMAP.md](ROADMAP.md) for prioritized follow-ups and acceptance criteria,

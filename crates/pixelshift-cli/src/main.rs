@@ -1,7 +1,7 @@
 use anyhow::{Context, Result, ensure};
 use clap::{Parser, Subcommand};
-use pixelshift_core::{CameraProfile, Mode, Options, SonyA7Cr, merge};
-use pixelshift_io::{OutputWriter, RawDecoder};
+use pixelshift_core::{Mode, Options, merge};
+use pixelshift_io::{OutputWriter, RawDecoder, profiles::Catalog};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
@@ -20,6 +20,9 @@ const PROTOCOL_VERSION: u32 = 1;
     about = "Experimental Sony a7CR sensor-domain Pixel Shift merger"
 )]
 struct Cli {
+    /// Override the bundled camera capability catalog (advanced/development use).
+    #[arg(long, global = true)]
+    camera_profiles: Option<PathBuf>,
     #[command(subcommand)]
     command: Commands,
 }
@@ -108,11 +111,15 @@ fn new_file(path: &Path) -> Result<File> {
         })
 }
 fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
+    let catalog = Catalog::load(cli.camera_profiles.as_deref())?;
+    let models: Vec<_> = catalog.cameras.iter().map(|p| p.model.as_str()).collect();
     match &cli.command {
         Commands::Info { .. } => Ok(json!({
             "protocol_version": PROTOCOL_VERSION,
             "engine_version": env!("CARGO_PKG_VERSION"),
-            "camera_models": ["ILCE-7CR"],
+            "camera_models": models,
+            "camera_names": catalog.cameras.iter().map(|p|p.name.as_str()).collect::<Vec<_>>(),
+            "camera_profile_schema_version": catalog.schema_version,
             "metadata_backend": pixelshift_io::metadata_backend(),
             "output_formats": ["tiff"],
             "experimental": true,
@@ -123,9 +130,9 @@ fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
             "metadata_backend": pixelshift_io::metadata_backend(),
             "capture": pixelshift_io::inspect_capture(input)?,
         })),
-        Commands::Cameras => Ok(
-            json!({"camera_models":["ILCE-7CR"],"modes":["four","sixteen","denoise"],"experimental":true}),
-        ),
+        Commands::Cameras => {
+            Ok(json!({"camera_models":models,"profiles":catalog.cameras,"experimental":true}))
+        }
         Commands::Merge {
             job, fixtures, log, ..
         } => {
@@ -147,7 +154,6 @@ fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
             let spec: Job = serde_json::from_reader(fs::File::open(job).context("opening job")?)
                 .context("invalid job JSON")?;
             ensure!(spec.version == PROTOCOL_VERSION, "unsupported job version");
-            let profile = SonyA7Cr;
             let mode = detection::mode(spec.mode.as_deref(), spec.inputs.len())?;
             let required = spec.inputs.len();
             let base = job.parent().unwrap_or(Path::new("."));
@@ -163,15 +169,19 @@ fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
                 paths.push(path);
             }
             let camera = if *fixtures {
-                spec.camera
-                    .as_deref()
-                    .filter(|c| *c != "auto")
-                    .unwrap_or(profile.model())
-                    .to_owned()
+                if let Some(camera) = spec.camera.as_deref().filter(|c| *c != "auto") {
+                    camera.to_owned()
+                } else {
+                    pixelshift_io::decode(&paths[0], true)?.frame.model
+                }
             } else {
-                detection::preflight(&mut paths, mode, spec.camera.as_deref())?
+                detection::preflight(&mut paths, mode, spec.camera.as_deref(), &catalog)?
             };
-            ensure!(camera == profile.model(), "unregistered camera profile");
+            let profile = catalog.find(&camera)?;
+            ensure!(
+                profile.supports(mode),
+                "camera profile does not support selected mode"
+            );
             diagnostics.record(format!("detected {camera}, {mode:?}, {required} sources"))?;
             let mut decoded = Vec::new();
             for (i, path) in paths.iter().enumerate() {
@@ -181,6 +191,10 @@ fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
                 } else {
                     pixelshift_io::SonyArwDecoder.decode(path)?
                 };
+                ensure!(
+                    frame.frame.cfa == profile.cfa_pattern()?,
+                    "RAW CFA does not match camera profile"
+                );
                 if mode != Mode::Denoise && !fixtures {
                     let capture = frame
                         .capture_metadata()
@@ -215,7 +229,7 @@ fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
             diagnostics.record("merge and motion correction")?;
             let (image, report) = merge(
                 &frames,
-                &profile,
+                profile,
                 &Options {
                     mode,
                     motion_threshold: spec.motion_threshold,
