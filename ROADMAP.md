@@ -24,8 +24,10 @@ acceptance. The alpha still holds whole frames and the output in memory.
 
 ## 1. Validate the alpha with real captures
 
-- [ ] Test installation, engine launch, merge and catalog import in Lightroom
-  Classic on supported macOS and Windows systems.
+- [ ] Complete installation, engine launch, merge and catalog import acceptance
+  on supported macOS and Windows systems. Initial macOS a7CR four-shot feedback
+  confirms merge/import, AI Denoise/Adaptive access and correct lens recognition;
+  Lightroom version and broader platform/capture coverage remain unrecorded.
 - [ ] Collect reference a7CR four-shot, sixteen-shot and ordinary burst sets,
   covering supported compression variants, high ISO, orientation, fine detail,
   camera drift and moving subjects. Keep original captures outside git; record
@@ -130,6 +132,18 @@ real TIFF testing has exposed Adobe profile and RAW editing limitations.
   and sixteen-shot scale; never blindly copy source geometry/opcodes.
 - [ ] Compare merged DNG and source ARW under matched WB, exposure and Adobe
   profile. Check neutral patches, chart colors, highlight recovery and tone.
+  Initial real four-shot feedback reports a slightly darker DNG and softer detail
+  with AI Denoise off on both and matched Detail settings. Diagnose alignment,
+  reconstruction, baseline exposure and profile interpretation; don't add an
+  arbitrary contrast/sharpening/exposure correction.
+- [ ] Inherit the reference photo's lens-correction enable preference for a
+  compatible merged DNG. Initial feedback required manually enabling the
+  correctly preselected lens profile. Keep this separate from copying source
+  geometry/opcodes or arbitrary Develop edits.
+- [ ] Verify decoder-crop mapping against the reported 9504×6336 ARW visible area.
+  Initial 9588×6364 DNG exposed more of the decoded buffer. Preserve the actual
+  source crop and common valid intersection, accounting for shift and 16-shot
+  scale; do not hardcode a centered crop or promise identical edge coverage.
 
 - [x] Prove an initial strip writer using the TIFF library, preserving linear
   samples without a second full-image output allocation. The existing merger

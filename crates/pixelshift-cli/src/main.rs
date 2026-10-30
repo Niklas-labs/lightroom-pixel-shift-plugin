@@ -1,6 +1,6 @@
 use anyhow::{Context, Result, ensure};
 use clap::{Parser, Subcommand};
-use pixelshift_core::{Mode, Options, merge};
+use pixelshift_core::{CameraProfile, Mode, Options, merge};
 use pixelshift_io::{OutputWriter, RawDecoder, profiles::Catalog};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -233,6 +233,12 @@ fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
                     decoded.frame.sequence = index + 1;
                 }
             }
+            let source_crop = decoded[0].source_crop();
+            let sensor_size = (decoded[0].frame.width, decoded[0].frame.height);
+            diagnostics.record(format!(
+                "reference sensor: {}x{}; preferred crop: {:?}",
+                sensor_size.0, sensor_size.1, source_crop
+            ))?;
             let mut color = decoded[0].color.clone();
             color
                 .photo_metadata
@@ -253,6 +259,27 @@ fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
                     alignment_radius: spec.alignment_radius,
                 },
             )?;
+            if let Some(crop) = source_crop {
+                color.default_crop = Some(pixelshift_io::map_reference_crop(
+                    crop,
+                    sensor_size,
+                    report.sensor_origin,
+                    profile.shift(mode, 0),
+                    if mode == Mode::Sixteen { 2 } else { 1 },
+                    (image.width, image.height),
+                )?);
+            }
+            diagnostics.record(format!(
+                "alignment residuals (sensor pixels): {:?}",
+                report.residual_shifts
+            ))?;
+            diagnostics.record(format!(
+                "motion reference fallback: {} / {} ({:.3}%); DNG default crop: {:?}",
+                report.fallback_pixels,
+                image.width * image.height,
+                report.fallback_pixels as f64 / (image.width * image.height) as f64 * 100.0,
+                color.default_crop
+            ))?;
             drop(frames); // Release source buffers before writing the result.
             diagnostics.record(format!(
                 "writing {}x{} {}",

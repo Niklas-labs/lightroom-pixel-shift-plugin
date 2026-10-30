@@ -129,7 +129,12 @@ The prototype keeps all decoded frames and the RGB result in memory. A 61 MP
 overhead; use a 16 GB+ machine and expect a slow first implementation. It has no
 out-of-core path or production performance claim. TIFF is classic TIFF, RGB16
 with sRGB transfer and ICC profile; highlights are clipped, with no tone mapping.
-The crop excludes a border of `4 + alignment_radius` sensor pixels on every side.
+The merged buffer excludes a border of `4 + alignment_radius` sensor pixels on
+all sides. DNG DefaultCrop additionally maps the source decoder's preferred crop
+into the output grid, accounting for the reference shift and sixteen-shot scale.
+Only the common valid region is displayed, so edge loss can make it slightly
+smaller than the ARW's visible area. If the decoder has no preferred crop, the
+valid merged buffer is used; no model-specific centered crop is guessed.
 Orientation and available standard camera/lens/exposure EXIF are preserved. GPS,
 serial numbers, private MakerNotes and source geometry tags are not copied.
 Lens identification does not unlock Adobe lens profiles restricted to RAW files;

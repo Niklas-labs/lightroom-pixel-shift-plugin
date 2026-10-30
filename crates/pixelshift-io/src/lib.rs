@@ -9,6 +9,9 @@ use std::{
 };
 use tiff::encoder::{TiffEncoder, colortype};
 
+mod geometry;
+pub use geometry::{Crop, map_reference_crop};
+
 mod dng;
 pub use dng::{DngWriter, write_dng};
 
@@ -65,6 +68,9 @@ pub struct PhotoMetadata {
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Color {
+    /// Display crop in reconstructed output pixels, not source sensor pixels.
+    #[serde(default)]
+    pub default_crop: Option<Crop>,
     #[serde(default)]
     pub photo_metadata: PhotoMetadata,
     pub white_balance: [f32; 3],
@@ -80,8 +86,12 @@ pub struct Decoded {
     pub frame: Frame,
     pub color: Color,
     signature: Option<Capture>,
+    source_crop: Option<Crop>,
 }
 impl Decoded {
+    pub fn source_crop(&self) -> Option<Crop> {
+        self.source_crop
+    }
     pub fn capture_metadata(&self) -> Option<&Capture> {
         self.signature.as_ref()
     }
@@ -91,9 +101,13 @@ impl Decoded {
             frame,
             color,
             signature: None,
+            source_crop: None,
         })
     }
     pub fn compatible(&self, other: &Self) -> bool {
+        if self.source_crop != other.source_crop {
+            return false;
+        }
         match (&self.signature, &other.signature) {
             (Some(a), Some(b)) => {
                 a.iso == b.iso
@@ -111,6 +125,8 @@ impl Decoded {
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Fixture {
+    #[serde(default)]
+    pub source_crop: Option<Crop>,
     pub frame: Frame,
     pub color: Color,
 }
@@ -123,6 +139,7 @@ pub fn decode(path: &Path, fixture: bool) -> Result<Decoded> {
             frame: input.frame,
             color: input.color,
             signature: None,
+            source_crop: input.source_crop,
         });
     }
     ensure!(
@@ -171,7 +188,17 @@ pub fn decode(path: &Path, fixture: bool) -> Result<Decoded> {
         .get(&rawler::imgop::xyz::Illuminant::D65)
         .context("missing D65 camera matrix")?;
     ensure!(matrix.len() == 9, "expected 3x3 camera matrix");
+    let source_crop = raw.crop_area.or(raw.active_area).map(|area| Crop {
+        x: area.p.x,
+        y: area.p.y,
+        width: area.d.w,
+        height: area.d.h,
+    });
+    if let Some(crop) = source_crop {
+        crop.validate(raw.width, raw.height)?;
+    }
     let color = Color {
+        default_crop: None,
         photo_metadata: capture.photo_metadata.clone(),
         orientation: raw.orientation.to_u16(),
         white_balance: [raw.wb_coeffs[0], raw.wb_coeffs[1], raw.wb_coeffs[2]],
@@ -191,6 +218,7 @@ pub fn decode(path: &Path, fixture: bool) -> Result<Decoded> {
         },
         color,
         signature: Some(capture),
+        source_crop,
     })
 }
 
@@ -430,6 +458,7 @@ mod tests {
     use super::*;
     fn calibration() -> Color {
         Color {
+            default_crop: None,
             photo_metadata: PhotoMetadata::default(),
             white_balance: [1.0; 3],
             xyz_to_camera: [
@@ -576,6 +605,7 @@ mod tests {
             },
             color: calibration(),
             signature: Some(capture),
+            source_crop: None,
         };
         let numeric = parse(r#"{"SerialNumber":12345}"#);
         assert_eq!(numeric.serial.as_deref(), Some("12345"));

@@ -20,8 +20,12 @@ Menu commands are registered under **Library → Plug-in Extras** only.
 - Original camera/lens/exposure EXIF when available, orientation, software and
   experimental merge description. UniqueCameraModel uses the camera identity;
   no Adobe profile, Sony MakerNote, serial, GPS or lens-correction opcode is copied.
-- ActiveArea/DefaultCrop describe the reconstructed output, already cropped by
-  the merger. Sixteen-shot output has twice the width and height. Source lens
+- ActiveArea describes the valid reconstructed buffer. DefaultCrop maps the
+  reference ARW's preferred decoder crop into this buffer, including nominal
+  sensor shift, merger origin and sixteen-shot scale. It is intersected with
+  valid output, so safety borders can reduce the visible size slightly. The
+  preview uses that same crop. If no source crop is known, use the full valid
+  buffer; do not infer a centered crop from advertised megapixels. Source lens
   geometry must not be copied unchanged into this coordinate system.
 - A separate sRGB RGB8 reduced preview, at most 512 pixels per side, is referenced
   through SubIFDs. There are no chained image IFDs. Root orientation applies.
@@ -69,3 +73,19 @@ lists linear DNG as supported for AI Denoise. Raw Details excludes linear DNG;
 it is not an acceptance requirement for this already reconstructed RGB image.
 Adaptive Color/B&W are [RAW profiles](https://helpx.adobe.com/lightroom-classic/desktop/process-and-develop-photos/image-tone-color.html).
 Their eligibility and appearance on our files still need actual Lightroom tests.
+
+## Initial real-capture feedback
+
+The user reports that the a7CR four-shot DNG enables AI Denoise and Adaptive
+features in Lightroom, and selects the correct lens profile once corrections are
+manually enabled. The Lightroom version has not been recorded, so this is evidence
+for that tested installation, not a version-wide compatibility claim.
+
+The merged file was reported as 9588×6364 versus the ARW's 9504×6336 visible size.
+The original writer ignored the decoder crop; the follow-up carries it into DNG
+DefaultCrop and logs sensor dimensions, crop, alignment residuals and fallback
+fraction. Real-capture crop verification remains needed. Slightly darker tone and
+softer detail were reported with AI Denoise off on both and matched Detail
+settings. Investigate registration/reconstruction and exposure/profile metadata;
+do not compensate with arbitrary sharpening or exposure boosts. The screenshot
+shows f/22, which affects both files and cannot explain their difference by itself.

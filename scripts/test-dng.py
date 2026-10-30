@@ -58,6 +58,25 @@ def check(engine):
                 assert raw.postprocess().size > 0
             print(f'{mode}: independent linear DNG sample/calibration/preview/development checks passed')
 
+        for name in job['inputs']:
+            path = root / name
+            frame = json.loads(path.read_text())
+            frame['source_crop'] = dict(x=8, y=8, width=48, height=32)
+            path.write_text(json.dumps(frame))
+        for mode, origin in [('four',(5,4)), ('sixteen',(11,8)), ('denoise',(4,4))]:
+            spec = dict(job, mode=mode, output=f'cropped-{mode}.dng', inputs=job['inputs'] if mode == 'sixteen' else job['inputs'][:4])
+            path = root / f'cropped-{mode}-job.json'
+            path.write_text(json.dumps(spec))
+            subprocess.run([str(engine), 'merge', '--fixtures', '--job', str(path)], check=True, capture_output=True)
+            scale = 2 if mode == 'sixteen' else 1
+            with tifffile.TiffFile(root / spec['output']) as dng:
+                raw = dng.pages[0]
+                assert raw.tags['DefaultCropOrigin'].value == origin
+                assert raw.tags['DefaultCropSize'].value == (48*scale,32*scale)
+                assert raw.pages[0].shape == (32*scale,48*scale,3)
+                np.testing.assert_allclose(raw.asarray(),np.broadcast_to(expected,raw.shape),rtol=0,atol=1e-6)
+            print(f'{mode}: source crop mapping and cropped preview checks passed')
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)

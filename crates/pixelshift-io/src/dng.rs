@@ -85,6 +85,13 @@ pub fn write_dng(path: &Path, image: &Image, color: &Color) -> Result<()> {
         neutral.iter().all(|v| v.n > 0),
         "DNG white balance exceeds rational precision"
     );
+    let crop = color.default_crop.unwrap_or(super::Crop {
+        x: 0,
+        y: 0,
+        width: image.width,
+        height: image.height,
+    });
+    crop.validate(image.width, image.height)?;
     let width = u32::try_from(image.width)?;
     let height = u32::try_from(image.height)?;
     let parent = path
@@ -98,13 +105,13 @@ pub fn write_dng(path: &Path, image: &Image, color: &Color) -> Result<()> {
             let mut encoder = TiffEncoder::new(&mut writer)?;
             let exif = write_exif(&mut encoder, &color.photo_metadata, u16::MAX)?;
             // A bounded reduced preview is a separate image; never the raw payload.
-            let factor = image.width.max(image.height).div_ceil(512);
-            let pw = image.width.div_ceil(factor);
-            let ph = image.height.div_ceil(factor);
+            let factor = crop.width.max(crop.height).div_ceil(512);
+            let pw = crop.width.div_ceil(factor);
+            let ph = crop.height.div_ceil(factor);
             let mut rgb = Vec::with_capacity(pw * ph * 3);
             for y in 0..ph {
                 for x in 0..pw {
-                    let offset = ((y * factor) * image.width + x * factor) * 3;
+                    let offset = ((crop.y + y * factor) * image.width + crop.x + x * factor) * 3;
                     rgb.extend_from_slice(&image.rgb[offset..offset + 3]);
                 }
             }
@@ -200,8 +207,16 @@ pub fn write_dng(path: &Path, image: &Image, color: &Color) -> Result<()> {
                 Tag::Unknown(50718),
                 &[rational(1.0)?, rational(1.0)?][..],
             )?;
-            write_aligned_tag(tags, Tag::Unknown(50719), &[0u32, 0][..])?;
-            write_aligned_tag(tags, Tag::Unknown(50720), &[width, height][..])?;
+            write_aligned_tag(
+                tags,
+                Tag::Unknown(50719),
+                &[crop.x as u32, crop.y as u32][..],
+            )?;
+            write_aligned_tag(
+                tags,
+                Tag::Unknown(50720),
+                &[crop.width as u32, crop.height as u32][..],
+            )?;
             write_aligned_tag(tags, Tag::Unknown(50829), &[0u32, 0, height, width][..])?;
             write_aligned_tag(tags, Tag::Unknown(50730), signed(0.0)?)?; // no arbitrary exposure shift
             write_aligned_tag(tags, Tag::Unknown(50731), rational(1.0)?)?;
@@ -236,6 +251,12 @@ mod tests {
     use std::fs::{self, File};
     fn color() -> Color {
         Color {
+            default_crop: Some(super::super::Crop {
+                x: 2,
+                y: 3,
+                width: 90,
+                height: 64,
+            }),
             photo_metadata: super::super::PhotoMetadata {
                 make: Some("SONY".into()),
                 model: Some("ILCE-7CR".into()),
@@ -286,6 +307,10 @@ mod tests {
         for (index, value) in color.xyz_to_camera.iter().enumerate() {
             assert!((root.get_entry(50721u16).unwrap().force_f32(index) - value).abs() < 0.00001);
         }
+        assert_eq!(root.get_entry(50719u16).unwrap().force_usize(0), 2);
+        assert_eq!(root.get_entry(50719u16).unwrap().force_usize(1), 3);
+        assert_eq!(root.get_entry(50720u16).unwrap().force_usize(0), 90);
+        assert_eq!(root.get_entry(50720u16).unwrap().force_usize(1), 64);
         assert!(root.get_entry(0x8773u16).is_none()); // No ICC on camera RGB.
         assert!(root.get_entry(0x828du16).is_none()); // Not a fabricated CFA mosaic.
         assert!(root.find_first_ifd_with_tag(0x927cu16).is_none());
