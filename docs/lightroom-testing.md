@@ -55,7 +55,12 @@ original ARWs in the Library module, then use **Library → Plug-in Extras → P
 (e.g. `DSC01582-DSC01585-PixelShift.dng`), adding a suffix if that name exists.
 Sources must be in one folder. The plugin checks the
 bundled engine version, passes original paths to it, and imports the DNG only
-after successful completion. The completion dialog confirms the catalog lookup
+after successful completion. Lightroom's top-left activity area shows the job
+while it runs: preparing/checking, decoding RAW i of N, aligning/merging, writing
+DNG and adding to Lightroom. Decode counts reflect started frames; merge/write
+use an activity indicator rather than an invented time percentage. Progress ends
+before the completion/error dialog. Cancellation is not offered until the engine
+supports safe cooperative cancellation. The completion dialog confirms the catalog lookup
 and attempts to select the result. If it is hidden, check library filters and the
 current collection; the plugin preserves both. A saved DNG remains available if
 catalog import fails.

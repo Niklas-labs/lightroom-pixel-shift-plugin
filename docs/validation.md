@@ -92,3 +92,11 @@ python scripts/test-dng.py --engine target/debug/sony-pixelshift
 A local Adobe DNG SDK 1.6 validator completes on the synthetic sample without
 warnings/errors. See [DNG representation and evidence](dng.md). Real-capture
 Lightroom Adaptive Color/B&W and AI Denoise remain unverified host gates.
+
+The Lua workflow mocks cooperatively schedule engine execution and progress
+polling. Verify decode/merge/write updates occur before the helper returns and
+that scopes close before dialogs on normal completion, launch/engine exceptions,
+invalid results and catalog failures. Partial-log tests cover incomplete lines,
+CRLF and unrelated diagnostics. In the Lightroom host, confirm top-left activity
+appears during a real long merge, stays responsive and clears on success/failure;
+mock scheduling alone does not establish host behavior.

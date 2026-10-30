@@ -40,3 +40,5 @@ for _, menu in ipairs({info.LrLibraryMenuItems}) do
 end
 print('Plugin protocol checks passed')
 dofile('scripts/test-plugin-workflow.lua')
+
+dofile('scripts/test-progress.lua')

@@ -6,10 +6,12 @@ local LrPathUtils = import 'LrPathUtils'
 local LrTasks = import 'LrTasks'
 local LrPrefs = import 'LrPrefs'
 local LrView = import 'LrView'
+local LrProgressScope = import 'LrProgressScope'
 local Protocol = require 'Protocol'
 local Engine = require 'Engine'
 local Labels = require 'Labels'
 local Output = require 'Output'
+local Progress = require 'Progress'
 local M = {}
 local function write(path, text)
     local file, problem = io.open(path, 'wb')
@@ -24,7 +26,7 @@ local function append(path, text)
 end
 function M.start(denoise)
     LrTasks.startAsyncTask(function()
-        local jobPath, resultPath, infoPath, logPath
+        local jobPath, resultPath, infoPath, logPath, progress
         local succeeded = false
         local ok, err = LrTasks.pcall(function()
             LrFunctionContext.callWithContext('Sony Pixel Shift', function(context)
@@ -67,6 +69,8 @@ function M.start(denoise)
                 }
                 if choice ~= 'ok' then return end
                 assert(not LrFileUtils.exists(output), 'Output already exists. Retry to choose a unique name.')
+                progress = Progress.new(LrProgressScope { title=summary.title, functionContext=context }, count, LrTasks)
+                LrTasks.yield() -- Let Lightroom paint the scope before launching the helper.
                 jobPath = LrFileUtils.chooseUniqueFileName(output .. '.pixelshift-job.json')
                 resultPath = jobPath .. '.result.json'
                 infoPath = jobPath .. '.engine.json'
@@ -74,6 +78,7 @@ function M.start(denoise)
                 local mode = denoise and 'denoise' or 'auto'
                 write(jobPath, Protocol.job(paths, output, mode))
                 write(logPath, 'Sony Pixel Shift Lightroom plugin ' .. Engine.version .. '\nBuild: ' .. (manifest and manifest.source_revision or 'development override') .. '\nHelper: ' .. executable .. '\n')
+                progress:stage('Checking engine')
                 local status = LrTasks.execute(Engine.command(executable, { 'info', '--output', infoPath }, WIN_ENV))
                 if status ~= 0 then
                     local message = Engine.launchError(status, WIN_ENV)
@@ -86,14 +91,15 @@ function M.start(denoise)
                     error(message, 0)
                 end
                 Engine.checkInfo(Engine.readJson(infoPath), manifest)
-                status = LrTasks.execute(Engine.command(executable,
-                    { 'merge', '--job', jobPath, '--result', resultPath, '--log', logPath }, WIN_ENV))
+                status = progress:run(Engine.command(executable,
+                    { 'merge', '--job', jobPath, '--result', resultPath, '--log', logPath }, WIN_ENV), logPath)
                 local result
                 if LrFileUtils.exists(resultPath) == 'file' then result = Engine.readJson(resultPath) end
                 assert(status == 0 and result and result.version == 1 and result.status == 'complete',
                     (result and result.message) or ('Engine failed (exit ' .. tostring(status) .. ').'))
                 assert(result.output == output, 'The engine reported a different output path; import was stopped.')
                 assert(LrFileUtils.exists(output) == 'file', 'Engine did not produce the DNG.')
+                progress:stage('Adding to Lightroom')
                 local callbackRan = false
                 local existing = catalog:findPhotoByPath(output)
                 local writeStatus = catalog:withWriteAccessDo('Import Sony Pixel Shift DNG', function()
@@ -120,12 +126,14 @@ function M.start(denoise)
                 append(logPath, 'Selection: ' .. (visible and 'result selected' or 'not selected; check library filters/current source'))
                 if not selectOk then append(logPath, 'Selection detail: ' .. tostring(selectProblem)) end
                 succeeded = true
+                progress:done()
                 local visibility = visible and 'View: Result selected' or 'View: Check library filters or current collection'
                 LrDialogs.message(summary.title,
                     'Saved: ' .. LrPathUtils.leafName(output) .. '\nCatalog: Confirmed\n' .. visibility ..
                     '\nFolder: ' .. LrPathUtils.parent(output) .. '\n\nDiagnostic log: ' .. logPath, 'info')
             end)
         end)
+        if progress then progress:done() end
         if infoPath then LrFileUtils.delete(infoPath) end
         if succeeded then
             if jobPath then LrFileUtils.delete(jobPath) end

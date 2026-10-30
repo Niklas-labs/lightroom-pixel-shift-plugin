@@ -191,8 +191,12 @@ dispatch only after profiling, while keeping distributed binaries compatible.
 
 ## 7. Finish the Lightroom experience and distribution
 
-- [ ] Add stage progress, cancellation and clear completion/failure reporting.
-  Account for cancellation latency during a whole-frame upstream decode.
+- [x] Add Lightroom stage progress with live decode counts, indeterminate merge/
+  write/import stages, and scope cleanup on success/failure. Poll appended engine
+  diagnostics while the helper runs in a separate SDK task; verify in Lightroom.
+- [ ] Add safe cooperative cancellation and finer engine progress. Account for
+  cancellation latency during a whole-frame upstream decode; the current scope
+  disables cancellation rather than pretending it can stop the engine.
 - [ ] Expose validated output and resource preferences in the plugin UI and
   version the engine/job protocol accordingly.
 - [ ] Sign the macOS helper with a Developer ID Application certificate, hardened
