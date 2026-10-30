@@ -10,8 +10,10 @@ correction are separate milestones.
 1. Open the repository's **Actions** tab and the latest successful **Package
    Lightroom Plugin** run for `main`.
 2. Under **Artifacts**, download the package for your system: macOS universal
-   (Intel and Apple Silicon), or Windows x86-64. GitHub downloads an artifact ZIP
-   containing the distribution ZIP and its checksum. Extract both layers.
+   (Intel and Apple Silicon), or Windows x86-64. Download the individual
+   `SonyPixelShift-<version>-<platform>.zip` artifact and extract it once.
+   `SonyPixelShift.lrplugin` is directly inside, alongside installation notes.
+   The package SHA-256 is recorded in the workflow job summary.
 3. Move `SonyPixelShift.lrplugin` to a permanent location. Keep its `bin`,
    `manifest.json`, and `licenses` contents together.
 4. In Lightroom Classic open **File → Plug-in Manager → Add**, and select that

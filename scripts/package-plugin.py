@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
 import stat
@@ -137,6 +138,13 @@ def build_package(binary, platform, output_dir, revision, metadata, info=None):
             zipped.writestr(entry, path.read_bytes())
     checksum = hashlib.sha256(archive.read_bytes()).hexdigest()
     archive.with_suffix('.zip.sha256').write_text(f'{checksum}  {archive.name}\n', encoding='ascii')
+    summary = os.environ.get('GITHUB_STEP_SUMMARY')
+    if summary:
+        with open(summary, 'a', encoding='utf-8') as report:
+            report.write(f'### {platform} plugin\n\n'
+                         f'Download **{archive.name}** from this run’s artifacts and extract once. '
+                         'Add `SonyPixelShift.lrplugin` in Lightroom Classic’s Plug-in Manager.\n\n'
+                         f'SHA-256: `{checksum}`\n\n')
     return archive
 
 

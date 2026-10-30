@@ -3,14 +3,16 @@
 The **Package Lightroom Plugin** workflow runs for pushes to `main` and supports
 manual `workflow_dispatch`. It produces two Actions artifacts:
 
-- `SonyPixelShift-macos-universal`: a ZIP containing a universal Apple Silicon +
+- `SonyPixelShift-<version>-macos-universal.zip`: a ZIP containing a universal Apple Silicon +
   Intel Rust executable and the Lua plugin.
-- `SonyPixelShift-windows-x86_64`: a ZIP containing the Windows x86-64 executable
+- `SonyPixelShift-<version>-windows-x86_64.zip`: a ZIP containing the Windows x86-64 executable
   with a statically linked C runtime and the Lua plugin.
 
-Each Actions artifact contains the distribution ZIP and a SHA-256 checksum.
-GitHub wraps those files in its own download ZIP; extract that wrapper and then
-extract the distribution ZIP. Add the resulting `SonyPixelShift.lrplugin`
+Each Actions artifact is the distribution ZIP itself. Download the individual
+ZIP artifact and extract it once: `SonyPixelShift.lrplugin`, `INSTALL.txt` and
+`TESTING.md` are at its root, with no wrapper directory or nested ZIP.
+The SHA-256 checksum appears in the packaging job summary; local assembly also
+writes a `.zip.sha256` sidecar. Add the resulting `SonyPixelShift.lrplugin`
 directory to Lightroom's Plug-in Manager. The engine is discovered relative to
 that directory, so there is no separate executable-selection step.
 
@@ -28,6 +30,12 @@ staple-capable distribution container are tracked release work in ROADMAP.md.
 See [macOS execution](lightroom-testing.md#macos-execution) for explicit per-helper
 quarantine instructions for trusted development builds; the plugin never changes
 quarantine automatically.
+
+CI uploads with `actions/upload-artifact` v7 and `archive: false`, preserving
+our ZIP bytes and their executable permission attributes. Uploading the unpacked
+plugin would lose the helper's executable bit. Intel validation downloads with
+`actions/download-artifact` v8 and `skip-decompress: true`, then tests the same ZIP
+users download. Action revisions are pinned.
 
 CI extracts the actual ZIP into a path containing spaces, Unicode and an
 apostrophe, parentheses and ampersand. It checks the manifest/checksum, executes

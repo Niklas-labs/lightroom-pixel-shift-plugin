@@ -8,9 +8,8 @@ and Lightroom host acceptance is still required. No original RAW is modified.
 ## Install the CI build in Lightroom Classic
 
 Download the latest successful **Package Lightroom Plugin** workflow artifact:
-`SonyPixelShift-macos-universal` (Apple Silicon and Intel) or
-`SonyPixelShift-windows-x86_64`. Extract the GitHub artifact ZIP, then extract the
-distribution ZIP inside it. Move `SonyPixelShift.lrplugin` to a permanent location
+`SonyPixelShift-<version>-macos-universal.zip` (Apple Silicon and Intel) or
+`SonyPixelShift-<version>-windows-x86_64.zip`. Extract the downloaded ZIP once; `SonyPixelShift.lrplugin` is at its root. Move `SonyPixelShift.lrplugin` to a permanent location
 and add that directory using **File → Plug-in Manager → Add**.
 
 The package embeds the matching Rust executable. No separate engine selection,
