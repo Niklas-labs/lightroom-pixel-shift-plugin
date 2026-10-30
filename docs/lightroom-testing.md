@@ -22,11 +22,34 @@ correction are separate milestones.
    **System Settings → Privacy & Security**, then retry the operation. The exact
    prompt depends on your OS security policy.
 
+## macOS execution
+
+The current development helper is ad-hoc signed, not Developer ID signed or
+notarized. First try **System Settings → Privacy & Security → Open Anyway** after
+macOS blocks that specific helper, then retry in Lightroom.
+
+For a downloaded build you trust, a manual fallback is to remove quarantine from
+**only its helper executable**. Replace the path below with your installed plugin
+location (the diagnostic log records the helper path):
+
+```sh
+xattr -d com.apple.quarantine "/full/path/to/SonyPixelShift.lrplugin/bin/sony-pixelshift"
+```
+
+No `sudo` or recursive flag is needed for a plugin you own. Do not remove
+quarantine from unrelated downloads or disable Gatekeeper globally. The plugin
+never runs this command automatically. An attribute-not-found message means
+quarantine was not present on that file; it does not diagnose other launch errors.
+
+A log containing `sony-pixelshift ...` followed by a metadata error means the
+helper launched: changing quarantine will not fix that metadata error.
+
+Developer ID signing and notarized distribution are tracked in ROADMAP.md.
+
 ## First merge
 
 Start with a complete **four-shot Sony a7CR Pixel Shift** capture. Select the
-original ARWs in the Library module, then use **Library → Plug-in Extras → Merge
-Sony a7CR Pixel Shift**. Choose a new TIFF destination. The plugin checks the
+original ARWs in the Library module, then use **Library → Plug-in Extras → Pixel Shift: more detail (4 or 16 RAWs)**. Choose a new TIFF destination. The plugin checks the
 bundled engine version, passes original paths to it, and imports the TIFF only
 after successful completion.
 

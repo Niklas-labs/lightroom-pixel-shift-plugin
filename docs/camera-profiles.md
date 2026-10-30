@@ -91,7 +91,10 @@ rejected. Merge keys (`<<`) are not a supported inheritance mechanism. Quote
 strings that could be mistaken for numbers or booleans. `on`, `off`, `yes` and
 `no` are strings rather than YAML 1.1 boolean shortcuts.
 
-The Rust parser is `serde_yaml_ng`; no Python/YAML installation is needed by
+The Rust parser is `serde-saphyr`; no Python/YAML installation is needed by
 Lightroom users. Python schema/package tooling uses PyYAML with matching boolean
 and duplicate-key rules. Developer tooling requires `PyYAML==6.0.3` and
 `jsonschema==4.26.0`, installed by CI. These do not ship as runtime dependencies.
+
+Runtime parsing disables merge keys, custom tags, includes and property interpolation,
+with duplicate-key errors, strict booleans and non-finite-value rejection.

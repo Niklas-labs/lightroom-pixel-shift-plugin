@@ -87,6 +87,8 @@ def smoke_test(archive, expected_platform, expected_machine=None):
         assert capture['ISO'] == 100 and capture['SequenceNumber'] == 3
         assert capture['SerialNumber'] == 'camera-x'
         assert capture['pixel_shift'] == {'group_id': 42, 'shot_number': 3, 'shot_count': 16}
+        raw_headerless = run_engine(engine, ['inspect', demo / 'capture-headerless.ARW'], env, check=True)
+        assert json.loads(raw_headerless.stdout)['capture'] == capture
         result_file = root / 'merge-result.json'
         log_file = root / 'engine.log'
         header = 'Lightroom launcher log header\n'

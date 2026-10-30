@@ -9,7 +9,7 @@ pixelshift-core = { path = "../pixelshift-core" }
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-serde_yaml_ng = "=0.10.0"
+serde-saphyr = { version = "=2.0.0", default-features = false, features = ["serialize", "deserialize"] }
 rawler = { version = "=0.8.0", default-features = false }
 tiff = "0.10"
 tempfile = "3"

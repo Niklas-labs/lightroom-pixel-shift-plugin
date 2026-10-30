@@ -28,6 +28,19 @@ function M.checkInfo(info, manifest)
     assert(type(info.camera_models) == 'table' and #info.camera_models > 0, 'The engine has no supported camera profiles.')
     assert(info.autodetection == true, 'This engine does not support automatic capture detection. Reinstall the complete current plugin package.')
 end
+function M.userError(value)
+    local message = tostring(value)
+    message = message:gsub('^%[string "[^"]+"%]:%d+:%s*', '')
+    message = message:gsub('^.-%.lua:%d+:%s*', '')
+    return message
+end
+function M.launchError(status, windows)
+    local message = 'Engine launch failed (exit ' .. tostring(status) .. ').\nCheck: correct platform package'
+    if not windows then
+        message = message .. '\nmacOS: Privacy & Security > Open Anyway\nManual fix: see TESTING.md > macOS execution'
+    end
+    return message
+end
 function M.command(executable, args, windows)
     local parts = { Protocol.quote(executable, windows) }
     for _, value in ipairs(args) do parts[#parts + 1] = Protocol.quote(value, windows) end

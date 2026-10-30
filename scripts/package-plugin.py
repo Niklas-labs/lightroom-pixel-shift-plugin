@@ -118,6 +118,8 @@ def build_package(binary, platform, output_dir, revision, metadata, info=None):
         'See TESTING.md for installation, troubleshooting, and diagnostic reporting.\n'
         'This development build is not notarized or publisher-signed. macOS may\n'
         'require approving the downloaded helper in Privacy & Security.\n'
+        'For a trusted build, TESTING.md documents a manual per-helper xattr fix.\n'
+        'The plugin never removes quarantine automatically.\n'
         'The camera profile and motion correction remain experimental. Output is\n'
         'currently TIFF; DNG and bounded-memory processing are planned separately.\n'
         'Keep original RAWs. A 16-shot capture can currently use 7-10 GB RAM.\n', encoding='utf-8')

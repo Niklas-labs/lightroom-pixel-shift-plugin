@@ -22,7 +22,7 @@ local ok, problem = pcall(function()
     write(base .. '/plugin/bin/sony-pixelshift', 'mock executable')
     write(base .. '/plugin/manifest.json', '{"protocol_version":1,"engine_version":"0.1.0"}')
     for i=1,16 do write(base .. '/photo-' .. i .. '.ARW', 'mock raw') end
-    for _, scenario in ipairs({'success', 'sixteen', 'denoise', 'options-cancel', 'cancel', 'engine-failure', 'bad-handshake', 'import-failure', 'catalog-timeout', 'wrong-output'}) do
+    for _, scenario in ipairs({'success', 'sixteen', 'denoise', 'options-cancel', 'cancel', 'engine-failure', 'launch-failure', 'bad-handshake', 'import-failure', 'catalog-timeout', 'wrong-output'}) do
         local state = {imports={},dialogs={},commands={}}
         local denoise = scenario == 'denoise'
         local count = scenario == 'sixteen' and 16 or 4
@@ -67,6 +67,7 @@ local ok, problem = pcall(function()
                     assert(state.context, 'Process ran outside function context')
                     state.commands[#state.commands+1]=command
                     if command:find("'info'",1,true) then
+                        if scenario == 'launch-failure' then return 126 end
                         local path=assert(command:match("'%-?%-output' '([^']+)'"))
                         write(path, '{"protocol_version":1,"engine_version":"' ..
                             (scenario == 'bad-handshake' and '9.0' or '0.1.0') .. '","camera_models":["ILCE-7CR"],"autodetection":true}')
@@ -106,6 +107,10 @@ local ok, problem = pcall(function()
             local jobPath=output .. '.pixelshift-job.json'
             assert(exists(jobPath) == 'file', 'Failed job was not retained')
             assert(not exists(jobPath .. '.engine.json'), 'Handshake result was not cleaned')
+            if scenario == 'launch-failure' then
+                assert(state.dialogs[1].message:find('Privacy & Security',1,true))
+                assert(#state.commands == 1)
+            end
             if scenario == 'engine-failure' then
                 assert(state.dialogs[1].message:find('test capture rejected',1,true))
             end
@@ -114,4 +119,4 @@ local ok, problem = pcall(function()
 end)
 cleanup()
 assert(ok, problem)
-print('Plugin mocked workflow checks passed (10 scenarios)')
+print('Plugin mocked workflow checks passed (11 scenarios)')

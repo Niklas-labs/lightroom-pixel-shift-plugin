@@ -69,9 +69,18 @@ function M.start(denoise)
                 logPath = LrFileUtils.chooseUniqueFileName(output .. '.pixelshift.log')
                 local mode = denoise and 'denoise' or 'auto'
                 write(jobPath, Protocol.job(paths, output, mode))
-                write(logPath, 'Sony Pixel Shift Lightroom plugin ' .. Engine.version .. '\n')
+                write(logPath, 'Sony Pixel Shift Lightroom plugin ' .. Engine.version .. '\nBuild: ' .. (manifest and manifest.source_revision or 'development override') .. '\nHelper: ' .. executable .. '\n')
                 local status = LrTasks.execute(Engine.command(executable, { 'info', '--output', infoPath }, WIN_ENV))
-                assert(status == 0, 'The bundled engine could not start (exit ' .. tostring(status) .. '). Check that this is the correct platform package and that the executable is permitted to run.')
+                if status ~= 0 then
+                    local message = Engine.launchError(status, WIN_ENV)
+                    if LrFileUtils.exists(infoPath) == 'file' then
+                        local readOk, failure = LrTasks.pcall(Engine.readJson, infoPath)
+                        if readOk and type(failure) == 'table' and type(failure.message) == 'string' then
+                            message = failure.message
+                        end
+                    end
+                    error(message, 0)
+                end
                 Engine.checkInfo(Engine.readJson(infoPath), manifest)
                 status = LrTasks.execute(Engine.command(executable,
                     { 'merge', '--job', jobPath, '--result', resultPath, '--log', logPath }, WIN_ENV))
@@ -101,7 +110,7 @@ function M.start(denoise)
                 local file = io.open(logPath, 'ab')
                 if file then file:write('\nLightroom workflow: ' .. tostring(err) .. '\n'); file:close() end
             end
-            local details = tostring(err)
+            local details = Engine.userError(err)
             if logPath then details = details .. '\n\nDiagnostic log: ' .. logPath end
             if jobPath then details = details .. '\nJob retained for troubleshooting: ' .. jobPath end
             LrDialogs.message('Sony Pixel Shift', details, 'critical')

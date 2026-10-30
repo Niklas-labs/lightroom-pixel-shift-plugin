@@ -42,32 +42,17 @@ pub struct Layout {
     pub output_scale: usize,
     pub offsets: Vec<[f32; 2]>,
 }
-fn validate_yaml(value: &serde_yaml_ng::Value) -> Result<()> {
-    use serde_yaml_ng::Value;
-    match value {
-        Value::Tagged(_) => anyhow::bail!("custom YAML tags are not supported"),
-        Value::Mapping(mapping) => {
-            for (key, value) in mapping {
-                ensure!(key.is_string(), "YAML mapping keys must be strings");
-                validate_yaml(value)?;
-            }
-        }
-        Value::Sequence(values) => {
-            for value in values {
-                validate_yaml(value)?;
-            }
-        }
-        _ => {}
-    }
-    Ok(())
-}
 impl Catalog {
     pub fn parse(text: &str) -> Result<Self> {
-        let yaml: serde_yaml_ng::Value =
-            serde_yaml_ng::from_str(text).context("invalid camera profile YAML")?;
-        validate_yaml(&yaml)?;
-        let raw: serde_json::Value = serde_json::to_value(yaml)
-            .context("camera profiles must use YAML with string keys and JSON-compatible values")?;
+        let mut options = serde_saphyr::Options::default();
+        options.duplicate_keys = serde_saphyr::DuplicateKeyPolicy::Error;
+        options.merge_keys = serde_saphyr::MergeKeyPolicy::Error;
+        options.strict_booleans = true;
+        options.no_schema = true;
+        options.reject_unsupported_tags = true;
+        options.non_finite_float_policy = serde_saphyr::NonFiniteFloatPolicy::Reject;
+        let raw: serde_json::Value = serde_saphyr::from_str_with_options(text, options)
+            .context("invalid camera profile YAML")?;
         if let Some(schema) = raw.get("$schema") {
             ensure!(schema.is_string(), "$schema must be a string");
         }
@@ -250,7 +235,7 @@ mod tests {
     }
     #[test]
     fn rejects_invalid_profiles() {
-        let baseline: serde_json::Value = serde_yaml_ng::from_str(EMBEDDED).unwrap();
+        let baseline: serde_json::Value = serde_saphyr::from_str(EMBEDDED).unwrap();
         for case in 0..7 {
             let mut v = baseline.clone();
             match case {
@@ -271,7 +256,7 @@ mod tests {
                 _ => v["cameras"][0]["pixel_shift"]["sixteen"]["output_scale"] = 1.into(),
             };
             assert!(
-                Catalog::parse(&serde_yaml_ng::to_string(&v).unwrap()).is_err(),
+                Catalog::parse(&serde_saphyr::to_string(&v).unwrap()).is_err(),
                 "case {case}"
             );
         }

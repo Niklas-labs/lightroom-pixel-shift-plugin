@@ -190,7 +190,7 @@ fn auto_and_omitted_configuration_detect_both_supported_counts() {
 #[test]
 fn profile_override_controls_model_capabilities_and_cfa() {
     let baseline: serde_json::Value =
-        serde_yaml_ng::from_str(include_str!("../../../config/camera-profiles.yaml")).unwrap();
+        serde_saphyr::from_str(include_str!("../../../config/camera-profiles.yaml")).unwrap();
     for case in 0..4 {
         let (dir, job) = setup(if case == 0 { "denoise" } else { "four" });
         let mut config = baseline.clone();
@@ -214,7 +214,7 @@ fn profile_override_controls_model_capabilities_and_cfa() {
             }
         }
         let path = dir.path().join("profiles.yaml");
-        fs::write(&path, serde_yaml_ng::to_string(&config).unwrap()).unwrap();
+        fs::write(&path, serde_saphyr::to_string(&config).unwrap()).unwrap();
         let run = Command::new(env!("CARGO_BIN_EXE_sony-pixelshift"))
             .arg("--camera-profiles")
             .arg(path)

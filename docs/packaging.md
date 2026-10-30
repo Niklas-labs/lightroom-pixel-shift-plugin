@@ -23,7 +23,11 @@ ExifTool, Rust toolchain or developer PATH is required at runtime.
 macOS binaries are assembled with `lipo` and ad-hoc signed for local execution.
 They are **not publisher-signed or notarized**. Windows development binaries are
 also unsigned. OS download security prompts may require allowing the specific
-helper before use. Publisher signing/notarization is a later distribution step.
+helper before use. Developer ID signing, hardened runtime, secure timestamps and notarization of a
+staple-capable distribution container are tracked release work in ROADMAP.md.
+See [macOS execution](lightroom-testing.md#macos-execution) for explicit per-helper
+quarantine instructions for trusted development builds; the plugin never changes
+quarantine automatically.
 
 CI extracts the actual ZIP into a path containing spaces, Unicode and an
 apostrophe, parentheses and ampersand. It checks the manifest/checksum, executes

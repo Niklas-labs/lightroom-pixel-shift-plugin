@@ -29,6 +29,12 @@ metadata[192:204] = b'SONY DSC \0\0\0'; u16(204, 2)
 entry(206, 0x202f, 7, 6, 240); entry(218, 0xb04a, 3, 1, 10)
 u32(240, 42); metadata[244:246] = bytes([3, 16])
 (root / 'capture-metadata.ARW').write_bytes(metadata)
+# Modern Sony ARWs may store the MakerNote IFD with no SONY DSC prefix.
+headerless = bytearray(metadata)
+headerless[192:222] = metadata[204:234]
+struct.pack_into('<I', headerless, 106, 42)
+(root / 'capture-headerless.ARW').write_bytes(headerless)
+
 inputs = []
 for index in range(16):
     x, y = [(1, 0), (1, 1), (0, 1), (0, 0)][index % 4]

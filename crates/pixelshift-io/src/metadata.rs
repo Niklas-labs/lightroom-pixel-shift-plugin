@@ -8,7 +8,7 @@ use super::Capture;
 use anyhow::{Context, Result, bail, ensure};
 use rawler::{
     bits::Endian,
-    formats::tiff::{GenericTiffReader, IFD, Value, ifd::OffsetMode, reader::TiffReader},
+    formats::tiff::{GenericTiffReader, IFD, Value, reader::TiffReader},
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -32,6 +32,7 @@ pub fn metadata_backend() -> &'static str {
 pub fn inspect_capture(path: &Path) -> Result<Capture> {
     let mut reader = File::open(path)?;
     read_capture(&mut reader)
+        .with_context(|| format!("reading Sony metadata from {}", path.display()))
 }
 
 fn number(ifd: &IFD, tag: u16) -> Result<Option<f64>> {
@@ -88,6 +89,59 @@ fn pixel_shift(maker: &IFD) -> Result<Option<PixelShiftInfo>> {
     }))
 }
 
+/// Sony ARW MakerNoteSony5 starts directly with an IFD. DSC/CAM variants have
+/// a 12-byte prefix. All retain TIFF-relative absolute value offsets.
+/// Reference: ExifTool MakerNotes.pm, MakerNoteSony and MakerNoteSony5.
+fn sony_maker_note<R: Read + Seek>(parent: &IFD, reader: &mut R) -> Result<IFD> {
+    let entry = parent.get_entry(0x927cu16).context("missing MakerNote")?;
+    let bytes = match &entry.value {
+        Value::Undefined(bytes) => bytes,
+        _ => bail!("invalid Sony MakerNote type"),
+    };
+    let prefix = bytes
+        .iter()
+        .take(12)
+        .map(|b| format!("{b:02x}"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let mut skip = if bytes.starts_with(b"SONY DSC ") || bytes.starts_with(b"SONY CAM ") {
+        12
+    } else {
+        0
+    };
+    let mut endian = parent.endian;
+    if bytes.get(skip..skip + 2) == Some(b"II") {
+        endian = Endian::Little;
+        skip += 2;
+    } else if bytes.get(skip..skip + 2) == Some(b"MM") {
+        endian = Endian::Big;
+        skip += 2;
+    }
+    let raw_count: [u8; 2] = bytes
+        .get(skip..skip + 2)
+        .with_context(|| {
+            format!(
+                "truncated Sony MakerNote (length={}, prefix={prefix})",
+                bytes.len()
+            )
+        })?
+        .try_into()?;
+    let count = match endian {
+        Endian::Little => u16::from_le_bytes(raw_count),
+        Endian::Big => u16::from_be_bytes(raw_count),
+    } as usize;
+    ensure!(
+        count > 0 && skip + 2 + count * 12 <= bytes.len(),
+        "invalid/truncated Sony MakerNote directory (length={}, entries={count}, prefix={prefix})",
+        bytes.len()
+    );
+    let offset = u32::try_from(entry.offset().context("Sony MakerNote has no offset")?)?
+        .checked_add(u32::try_from(skip)?)
+        .context("Sony MakerNote offset overflow")?;
+    IFD::new(reader, offset, parent.base, parent.corr, endian, &[])
+        .context("parsing Sony MakerNote directory")
+}
+
 fn read_capture<R: Read + Seek>(reader: &mut R) -> Result<Capture> {
     let tiff =
         GenericTiffReader::new(reader, 0, 0, Some(4), &[]).context("parsing RAW TIFF/EXIF")?;
@@ -131,21 +185,7 @@ fn read_capture<R: Read + Seek>(reader: &mut R) -> Result<Capture> {
         .filter(|s| !s.is_empty());
     let maker_parent = root.find_first_ifd_with_tag(0x927cu16);
     let (sequence, pixel_shift) = if let Some(parent) = maker_parent {
-        // Upstream parse_makernote inspects fixed header prefixes; reject a
-        // truncated payload before calling it instead of allowing a slice panic.
-        let entry = parent.get_entry(0x927cu16).context("missing MakerNote")?;
-        let bytes = match &entry.value {
-            Value::Undefined(bytes) => bytes,
-            _ => bail!("invalid Sony MakerNote type"),
-        };
-        ensure!(bytes.len() >= 14, "truncated Sony MakerNote");
-        ensure!(
-            bytes.starts_with(b"SONY DSC "),
-            "unsupported Sony MakerNote header"
-        );
-        let maker = parent
-            .parse_makernote(reader, OffsetMode::Absolute, &[])?
-            .context("missing Sony MakerNote IFD")?;
+        let maker = sony_maker_note(parent, reader)?;
         let shift = pixel_shift(&maker)?;
         let sequence = if let Some(info) = &shift {
             Some(usize::from(info.shot_number))
@@ -252,6 +292,53 @@ mod tests {
             assert_eq!(capture.serial.as_deref(), Some("camera-x"));
             assert_eq!(capture.pixel_shift.unwrap().group_id, 42);
         }
+    }
+    fn headerless(big: bool, shift: [u8; 6]) -> Vec<u8> {
+        let mut bytes = fixture(big, shift, 3);
+        // Copy the IFD entry table, not the out-of-line value payload.
+        bytes.copy_within(204..234, 192);
+        bytes[106..110].copy_from_slice(&if big {
+            42u32.to_be_bytes()
+        } else {
+            42u32.to_le_bytes()
+        });
+        bytes
+    }
+    #[test]
+    fn reads_headerless_arw_and_cam_variants() {
+        for big in [false, true] {
+            let mut shift = [0; 6];
+            shift[..4].copy_from_slice(&if big {
+                42u32.to_be_bytes()
+            } else {
+                42u32.to_le_bytes()
+            });
+            shift[4] = 3;
+            shift[5] = 16;
+            let capture = read_capture(&mut Cursor::new(headerless(big, shift))).unwrap();
+            assert_eq!(capture.sequence, Some(3));
+            assert_eq!(capture.pixel_shift.unwrap().group_id, 42);
+            let mut cam = fixture(big, shift, 3);
+            cam[192..204].copy_from_slice(b"SONY CAM \0\0\0");
+            assert_eq!(
+                read_capture(&mut Cursor::new(cam)).unwrap().sequence,
+                Some(3)
+            );
+        }
+    }
+    #[test]
+    fn rejects_unknown_and_truncated_maker_directories() {
+        let mut unknown = fixture(false, [0; 6], 1);
+        unknown[192..204].copy_from_slice(b"UNKNOWN DATA");
+        assert!(
+            read_capture(&mut Cursor::new(unknown))
+                .unwrap_err()
+                .to_string()
+                .contains("prefix=")
+        );
+        let mut bad = headerless(false, [0; 6]);
+        bad[192..194].copy_from_slice(&u16::MAX.to_le_bytes());
+        assert!(read_capture(&mut Cursor::new(bad)).is_err());
     }
     #[test]
     fn sequence_fallback_and_single_burst() {

@@ -160,8 +160,17 @@ dispatch only after profiling, while keeping distributed binaries compatible.
   Account for cancellation latency during a whole-frame upstream decode.
 - [ ] Expose validated output and resource preferences in the plugin UI and
   version the engine/job protocol accordingly.
-- [ ] Add tagged release assets and publisher signing/notarization; preserve
-  native architecture and extracted-package tests.
+- [ ] Sign the macOS helper with a Developer ID Application certificate, hardened
+  runtime and a secure timestamp. Current ad-hoc signing is not publisher trust.
+- [ ] Notarize the macOS distribution with `notarytool`; choose a supported DMG
+  or PKG container and staple its ticket. Standalone Mach-O binaries and ZIPs
+  cannot themselves carry a stapled ticket. Retain ZIP development artifacts.
+- [ ] Add CI signing/notarization credentials through repository secrets, verify
+  signatures and notarization results, and test a normal browser download with
+  quarantine intact on a fresh macOS account (Intel and Apple Silicon). Installation
+  should not require `xattr` or a global Gatekeeper change.
+- [ ] Add tagged release assets and Windows publisher signing; preserve native
+  architecture and extracted-package tests.
 
 Implementation order: real-capture acceptance and baselines → capture
 auto-detection/generalized capabilities → tiled stores/sinks → linear DNG →

@@ -20,6 +20,9 @@ assert(json.decode('{"null":null,"false":false,"n":-1.25e2}').n == -125)
 for _, bad in ipairs({'{"x":1,"x":2}', '[1,]', '{"x":}', '01', '1.', '1.e2', '1e400', 'true false', '"\\uD800"', '"\\uDC00"', '"a\nb"'}) do
     assert(not pcall(json.decode, bad), 'Accepted invalid JSON: ' .. bad)
 end
+assert(engine.userError('[string "Workflow.lua"]:80: unsupported Sony MakerNote header') == 'unsupported Sony MakerNote header')
+assert(engine.launchError(126, false):find('Privacy & Security', 1, true))
+assert(not engine.launchError(126, true):find('Privacy & Security', 1, true))
 local manifest = {protocol_version=1, engine_version='0.1.0'}
 engine.checkManifest(manifest)
 engine.checkInfo({protocol_version=1, engine_version='0.1.0',camera_models={'ILCE-7CR'},autodetection=true}, manifest)
