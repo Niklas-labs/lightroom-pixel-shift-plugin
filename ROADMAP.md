@@ -201,8 +201,11 @@ dispatch only after profiling, while keeping distributed binaries compatible.
   diagnostics while the helper runs in a separate SDK task; verify in Lightroom.
 - [ ] Add safe cooperative cancellation and finer engine progress. Account for
   cancellation latency during a whole-frame upstream decode; the current scope
-  disables cancellation rather than pretending it can stop the engine. The user
-  confirms the progress build works on the initial macOS installation.
+  disables cancellation rather than pretending it can stop the engine.
+- [ ] Re-verify progress in Lightroom after the reported `Progress` toolkit module
+  load failure. Use a project-named plain-table module, increment the SDK build,
+  validate extracted ZIP Lua loading in isolation, and require full replacement
+  with Lightroom closed. The screenshot alone does not identify the root cause.
 - [ ] Expose validated output and resource preferences in the plugin UI and
   version the engine/job protocol accordingly.
 - [ ] Sign the macOS helper with a Developer ID Application certificate, hardened

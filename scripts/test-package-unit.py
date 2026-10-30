@@ -3,6 +3,8 @@
 import hashlib
 import importlib.util
 import json
+import os
+import subprocess
 from pathlib import Path
 import stat
 import tempfile
@@ -59,6 +61,21 @@ class PackagingTests(unittest.TestCase):
             self.assertFalse(any('/target/' in name or '/.cargo/' in name for name in zipped.namelist()))
         checksum = archive.with_suffix('.zip.sha256').read_text(encoding='ascii').split()[0]
         self.assertEqual(checksum, hashlib.sha256(archive.read_bytes()).hexdigest())
+
+    @unittest.skipUnless(os.environ.get('PIXELSHIFT_TEST_LUA'), 'Set PIXELSHIFT_TEST_LUA to Lua 5.1')
+    def test_extracted_toolkit_loads_without_source_tree_fallback(self):
+        archive = self.package('macos-universal')
+        destination = self.root / 'installed package'
+        SMOKE.extract_package(archive, destination)
+        plugin = destination / 'SonyPixelShift.lrplugin'
+        command = [os.environ['PIXELSHIFT_TEST_LUA'], str(ROOT / 'scripts/test-plugin-load.lua'), str(plugin)]
+        result = subprocess.run(command, cwd=self.root, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        # A missing dependency must fail this gate, as it would in Lightroom.
+        (plugin / 'PixelShiftProgress.lua').unlink()
+        missing = subprocess.run(command, cwd=self.root, capture_output=True, text=True)
+        self.assertNotEqual(missing.returncode, 0)
+        self.assertIn('PixelShiftProgress.lua', missing.stderr)
 
     def test_windows_uses_exe_and_records_platform(self):
         archive = self.package('windows-x86_64')

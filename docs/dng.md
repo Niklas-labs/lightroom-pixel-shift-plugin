@@ -95,8 +95,9 @@ shows f/22, which affects both files and cannot explain their difference by itse
 
 ## Exposure and white-balance comparison
 
-The user confirmed the corrected output size and native Lightroom progress UI
-work on the tested macOS installation. Subsequent screenshots show Adobe Color,
+The user confirmed the corrected output size on the tested macOS installation.
+A subsequent toolkit `Progress` module load failure requires progress host
+acceptance to be repeated after the loader hardening update. Subsequent screenshots show Adobe Color,
 As Shot WB and Exposure 0.00 on both images: merged DNG 6350 K / +18 tint, source
 ARW 5850 K / +15 tint, with uniform slight darkening reported. This rules out an
 Exposure-slider mismatch for that comparison. Matching profile names and zero

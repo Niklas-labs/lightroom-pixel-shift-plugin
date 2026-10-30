@@ -20,6 +20,7 @@ jobs:
       - uses: actions/checkout@v4
       - run: sudo apt-get update && sudo apt-get install -y lua5.1
       - run: lua5.1 scripts/test-plugin.lua
+      - run: lua5.1 scripts/test-plugin-load.lua lightroom/SonyPixelShift.lrplugin
 
   camera-schema:
     runs-on: ubuntu-latest

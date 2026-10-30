@@ -11,7 +11,7 @@ local Protocol = require 'Protocol'
 local Engine = require 'Engine'
 local Labels = require 'Labels'
 local Output = require 'Output'
-local Progress = require 'Progress'
+local Progress = require 'PixelShiftProgress'
 local M = {}
 local function write(path, text)
     local file, problem = io.open(path, 'wb')

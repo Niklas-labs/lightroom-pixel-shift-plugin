@@ -100,3 +100,11 @@ invalid results and catalog failures. Partial-log tests cover incomplete lines,
 CRLF and unrelated diagnostics. In the Lightroom host, confirm top-left activity
 appears during a real long merge, stays responsive and clears on success/failure;
 mock scheduling alone does not establish host behavior.
+
+Packaging also runs `test-plugin-load.lua` on the extracted ZIP with no source
+package path. It loads both menu entry points and their dependencies under a
+limited toolkit-style global environment, then constructs progress without
+metatables. A negative check removes `PixelShiftProgress.lua` and requires the
+loader gate to fail. Run package units with `PIXELSHIFT_TEST_LUA` pointing to Lua
+5.1; CI installs Lua and sets this explicitly. This catches missing packaged
+modules and unsupported global dependencies, not all Lightroom host behaviors.

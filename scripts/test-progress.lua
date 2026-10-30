@@ -1,5 +1,5 @@
 -- Partial lines must not advance progress; diagnostic text is not a stage.
-local Progress = require 'Progress'
+local Progress = require 'PixelShiftProgress'
 local scope = {captions={}, closes=0}
 function scope:setCancelable(value) assert(value == false) end
 function scope:setPausable(pausable,cancelable) assert(pausable == false and cancelable == false) end

@@ -17,8 +17,10 @@ improved subpixel motion correction remain separate checks.
 3. Move `SonyPixelShift.lrplugin` to a permanent location. Keep its `bin`,
    `manifest.json`, and `licenses` contents together.
 4. In Lightroom Classic open **File → Plug-in Manager → Add**, and select that
-   `.lrplugin` directory. When replacing a build, close Lightroom first or use
-   Plug-in Manager to reload the updated plugin.
+   `.lrplugin` directory. For an update, fully quit Lightroom, replace the entire
+   old `.lrplugin` folder, then reopen Lightroom. In Plug-in Manager verify the
+   plugin's installed path; remove/re-add that folder if menu/module registration
+   remains stale. Avoid merging individual files from different builds.
 5. These CI development binaries are not publisher-signed/notarized. If macOS
    blocks the helper, approve that specific downloaded application through
    **System Settings → Privacy & Security**, then retry the operation. The exact
@@ -81,6 +83,17 @@ can show “none defined”; this is expected. In Plug-in Manager, select the ac
 `SonyPixelShift.lrplugin` folder, enable it and reload after replacing a build.
 If the Library menu is also empty, check the plugin status/error in Plug-in
 Manager; this occurs before launching the Rust helper.
+
+## “Could not load toolkit script”
+
+This occurs in Lua module loading before the helper runs, so quarantine and RAW
+settings are unrelated. Verify that you extracted the complete `.lrplugin`, quit
+Lightroom fully, replace the whole installed folder and reopen. Check Plug-in
+Manager's path to avoid loading another copy. The progress module is now named
+`PixelShiftProgress.lua`; it must sit alongside `Workflow.lua` and `Info.lua`.
+CI loads the assembled ZIP's menu scripts/dependencies in isolation, with no
+source-tree fallback, and constructs progress using plain tables. Actual Lightroom
+loader behavior still requires host confirmation.
 
 ## Reporting a failure
 
