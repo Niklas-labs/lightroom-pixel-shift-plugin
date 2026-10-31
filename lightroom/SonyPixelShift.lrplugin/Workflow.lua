@@ -59,7 +59,6 @@ function M.start(denoise)
                 local choice = LrDialogs.presentModalDialog {
                     title = summary.title,
                     contents = view:column {
-                        bind_to = settings,
                         spacing = view:control_spacing(),
                         view:static_text { title = 'Input: ' .. summary.input },
                         view:static_text { title = 'Result: ' .. summary.result },
@@ -70,7 +69,7 @@ function M.start(denoise)
                         view:static_text { title = 'Camera: Auto-detected | Experimental' },
                         view:row {
                             view:static_text { title = 'Memory:' },
-                            view:popup_menu { value = LrView.bind('sourceStorage'), items = {
+                            view:popup_menu { value = LrView.bind { key = 'sourceStorage', bind_to_object = settings }, items = {
                                 { title = 'RAM', value = 'ram' },
                                 { title = 'Disk (less RAM)', value = 'disk' },
                             } },

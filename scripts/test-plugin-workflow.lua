@@ -45,11 +45,17 @@ local ok, problem = pcall(function()
     write(base .. '/plugin/bin/sony-pixelshift', 'mock executable')
     write(base .. '/plugin/manifest.json', '{"protocol_version":1,"engine_version":"0.1.0"}')
     for i=1,16 do write(base .. '/DSC' .. string.format('%05d', i) .. '.ARW', 'mock raw') end
-    for _, scenario in ipairs({'success', 'disk', 'sixteen', 'denoise', 'options-cancel', 'filtered-selection', 'selection-error', 'unconfirmed-import', 'engine-failure', 'execute-error', 'launch-failure', 'bad-handshake', 'import-failure', 'catalog-timeout', 'wrong-output'}) do
+    for _, scenario in ipairs({'success', 'disk', 'saved-ram', 'saved-disk', 'invalid-memory', 'sixteen', 'denoise', 'options-cancel', 'filtered-selection', 'selection-error', 'unconfirmed-import', 'engine-failure', 'execute-error', 'launch-failure', 'bad-handshake', 'import-failure', 'catalog-timeout', 'wrong-output'}) do
         local state = {imports={},dialogs={},commands={}, registry={}, queue={}, captions={}}
         local denoise = scenario == 'denoise'
         local count = scenario == 'sixteen' and 16 or 4
         local output
+        local preferences = {}
+        if scenario == 'saved-ram' then preferences.sourceStorage = 'ram'
+        elseif scenario == 'saved-disk' then preferences.sourceStorage = 'disk'
+        elseif scenario == 'invalid-memory' then preferences.sourceStorage = 'unknown-value' end
+        local expectedInitial = scenario == 'saved-disk' and 'disk' or 'ram'
+        local expectedStorage = (scenario == 'disk' or scenario == 'saved-disk') and 'disk' or 'ram'
         local function photo(path) return {getRawMetadata=function(_, key) assert(key == 'path'); return path end} end
         local catalog = {}
         function catalog:getTargetPhotos()
@@ -108,12 +114,38 @@ local ok, problem = pcall(function()
             end,
             LrBinding={makePropertyTable=function(context)
                 assert(state.context and context == state.contextObject, "Property table needs the active function context")
-                return {}
+                local properties = {}
+                state.properties = properties
+                return properties
             end},
-            LrView={bind=function(key) return key end,osFactory=function() return {control_spacing=function() return 8 end,static_text=function(_, t) return t end,row=function(_,t) return t end,popup_menu=function(_,t) return t end,column=function(_, t) return t end} end},
+            LrView={bind=function(binding)
+                return type(binding) == 'string' and {key=binding} or binding
+            end,osFactory=function() return {
+                control_spacing=function() return 8 end,
+                static_text=function(_,t) return t end,
+                row=function(_,t) return t end,
+                column=function(_,t) return t end,
+                popup_menu=function(_,t)
+                    state.popup = t
+                    return t
+                end,
+            } end},
             LrDialogs={presentModalDialog=function(options)
                 state.options = options
-                if scenario == 'disk' then options.contents.bind_to.sourceStorage = 'disk' end
+                -- Resolve the documented binding object, rather than assuming
+                -- a made-up parent property establishes a usable binding.
+                local popup = assert(state.popup)
+                local binding = assert(popup.value)
+                local object = binding.bind_to_object or popup.bind_to_object
+                local initial = object and object[binding.key]
+                local title
+                for _,item in ipairs(popup.items) do
+                    if item.value == initial then title=item.title end
+                end
+                assert(initial == expectedInitial, 'Memory popup has no valid initial selection')
+                assert(title == (expectedInitial == 'disk' and 'Disk (less RAM)' or 'RAM'), 'Memory popup is blank')
+                assert(object == state.properties, 'Popup must read and write the workflow settings')
+                if scenario == 'disk' then object[binding.key] = 'disk' end
                 assert(options.contents[2].title:find(denoise and 'Less noise' or (count == 16 and 'Higher resolution' or 'Better color detail'), 1, true))
                 return scenario == 'options-cancel' and 'cancel' or 'ok'
             end,runSavePanel=function() error('Unexpected output picker') end,
@@ -137,7 +169,7 @@ local ok, problem = pcall(function()
                 if not ok then error(problem,0) end
             end},
             LrPathUtils={child=function(a,b) return a .. '/' .. b end,parent=function(a) return a:match('^(.*)/') end,leafName=function(a) return a:match('([^/]+)$') end},
-            LrPrefs={prefsForPlugin=function() return {} end},
+            LrPrefs={prefsForPlugin=function() return preferences end},
             LrTasks={startAsyncTask=function(callback) state.queue[#state.queue+1]=coroutine.create(callback) end,
                 pcall=taskPcall,sleep=function() coroutine.yield() end,yield=function() coroutine.yield() end,
                 execute=function(command)
@@ -153,7 +185,7 @@ local ok, problem = pcall(function()
                     state.job=assert(command:match("'%-%-job' '([^']+)'"))
                     state.result=assert(command:match("'%-%-result' '([^']+)'"))
                     state.log=assert(command:match("'%-%-log' '([^']+)'"))
-                    local job=Json.decode(read(state.job)); assert(job.source_storage == (scenario == 'disk' and 'disk' or 'ram')); assert(job.mode == (denoise and 'denoise' or 'auto') and job.camera == 'auto'); assert(job.inputs[1] == base .. '/DSC00001.ARW')
+                    local job=Json.decode(read(state.job)); assert(job.source_storage == expectedStorage); assert(job.mode == (denoise and 'denoise' or 'auto') and job.camera == 'auto'); assert(job.inputs[1] == base .. '/DSC00001.ARW')
                     if scenario == 'execute-error' then error('process launch raised an exception') end
                     state.inExecute = true
                     for i=1,count do
@@ -187,9 +219,14 @@ local ok, problem = pcall(function()
         package.loaded.Workflow=nil
         require('Workflow').start(denoise)
         scheduler(state.queue)
-        if scenario == 'options-cancel' then assert(not state.scope)
-        else assert(state.scope.ended and state.scope.closeCount == 1) end
-        if scenario == 'success' or scenario == 'disk' or scenario == 'sixteen' or scenario == 'denoise' or scenario == 'filtered-selection' or scenario == 'selection-error' then
+        if scenario == 'options-cancel' then
+            assert(not state.scope and preferences.sourceStorage == nil)
+        else
+            assert(state.scope, state.dialogs[1] and state.dialogs[1].message or 'Workflow failed before progress started')
+            assert(state.scope.ended and state.scope.closeCount == 1)
+            assert(preferences.sourceStorage == expectedStorage, 'Memory choice was not persisted')
+        end
+        if scenario == 'success' or scenario == 'disk' or scenario == 'saved-ram' or scenario == 'saved-disk' or scenario == 'invalid-memory' or scenario == 'sixteen' or scenario == 'denoise' or scenario == 'filtered-selection' or scenario == 'selection-error' then
             local seen = {}
             for _, update in ipairs(state.captions) do
                 if update.duringExecute then seen[update.text]=true end
@@ -234,4 +271,4 @@ local ok, problem = pcall(function()
 end)
 cleanup()
 assert(ok, problem)
-print('Plugin mocked workflow checks passed (15 scenarios, with cooperative engine/progress scheduling)')
+print('Plugin mocked workflow checks passed (18 scenarios, with cooperative engine/progress scheduling)')

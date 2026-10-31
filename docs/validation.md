@@ -135,3 +135,9 @@ fail; memory-dialog property tables use `LrBinding.makePropertyTable(context)`.
 Workflow scenarios also require the active function context for that factory.
 These checks cover the namespace contract; real Lightroom host testing remains
 necessary for the full SDK behavior.
+
+Memory-menu binding regression: resolve the documented `bind_to_object` and
+`key`, then match the model value to a menu item's title before the dialog is
+shown. Check new preferences (RAM), saved RAM/Disk, invalid saved values (RAM),
+selection persistence and the engine job's storage field. Ignore unsupported
+`bind_to` properties so the mock cannot hide the original blank-menu defect.
