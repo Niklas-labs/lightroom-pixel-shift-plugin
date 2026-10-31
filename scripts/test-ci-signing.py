@@ -181,6 +181,16 @@ class SigningTests(unittest.TestCase):
                 packager.build_package(binary,'macos-universal',self.root/'dist','a'*40,{}, {},
                                        macos_signing='developer-id',notarization_receipt=receipt)
 
+    def test_diagnostics_do_not_echo_error_values_or_tokens(self):
+        detail=signing.safe_endpoint_detail(json.dumps({'errors':['claim "event_name" mismatched secret-value']}))
+        self.assertIn('event_name',detail)
+        self.assertNotIn('secret-value',detail)
+        self.assertEqual(signing.safe_endpoint_detail(b'not json with secret'), 'response withheld')
+        self.assertEqual(signing.claim_mismatches('opaque-private-token'),'unavailable')
+        jwt='header.'+base64.urlsafe_b64encode(json.dumps({'sub':'private-value'}).encode()).decode()+'.signature'
+        self.assertNotIn('private-value',signing.claim_mismatches(jwt))
+        self.assertIn('sub',signing.claim_mismatches(jwt))
+
     def test_mask_escapes_workflow_commands_and_does_not_print_locally(self):
         output=io.StringIO()
         with patch.dict(os.environ,{'GITHUB_ACTIONS':'true'}), redirect_stdout(output):

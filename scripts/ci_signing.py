@@ -49,6 +49,48 @@ class NoRedirect(request.HTTPRedirectHandler):
         return None
 
 
+def safe_endpoint_detail(raw):
+    # Auth errors can embed JWT claims. Report only known field names/categories.
+    try:
+        errors = json.loads(raw).get('errors', [])
+        message = ' '.join(e for e in errors if isinstance(e,str)).lower()
+    except (ValueError, AttributeError, TypeError):
+        return 'response withheld'
+    fields = {'repository', 'repository_id', 'repository_owner_id', 'ref', 'ref_type',
+              'event_name', 'workflow_ref', 'sub', 'iss', 'aud'}
+    claims = [name for name in re.findall(r'claim [\"\']([a-z_]+)[\"\']', message) if name in fields]
+    if claims:
+        return 'JWT claim validation failed: ' + ', '.join(sorted(set(claims)))
+    for word, category in [('audience','JWT audience validation failed'),('issuer','JWT issuer validation failed'),
+                           ('signature','JWT signature validation failed'),('expired','JWT has expired')]:
+        if word in message:
+            return category
+    if 'role' in message and any(word in message for word in ['not found','could not be found','unknown']):
+        return 'requested Bao role was not found'
+    return 'response withheld'
+
+
+def claim_mismatches(jwt):
+    # This is diagnostic only; Bao verifies the signature and authorizes access.
+    try:
+        payload = jwt.split('.')[1]
+        claims = json.loads(base64.urlsafe_b64decode(payload + '='*((-len(payload))%4)))
+        expected = {'iss':'https://token.actions.githubusercontent.com',
+                    'sub':'repo:Niklas-labs/lightroom-pixel-shift-plugin:environment:macos-signing',
+                    'repository':'Niklas-labs/lightroom-pixel-shift-plugin','repository_id':'1438976219',
+                    'repository_owner_id':'343997774','ref':'refs/heads/main','ref_type':'branch',
+                    'workflow_ref':'Niklas-labs/lightroom-pixel-shift-plugin/.github/workflows/package.yml@refs/heads/main'}
+        mismatches = [key for key,value in expected.items() if claims.get(key)!=value]
+        audience=claims.get('aud')
+        if not (audience==BAO_ADDRESS or isinstance(audience,list) and BAO_ADDRESS in audience):
+            mismatches.append('aud')
+        if claims.get('event_name') not in ('push','workflow_dispatch'):
+            mismatches.append('event_name')
+        return ', '.join(sorted(mismatches)) or 'none'
+    except (ValueError, TypeError, IndexError, AttributeError):
+        return 'unavailable'
+
+
 def request_json(url, headers, payload=None):
     if parse.urlsplit(url).scheme != 'https':
         raise SigningError('Credential transport requires HTTPS')
@@ -64,7 +106,8 @@ def request_json(url, headers, payload=None):
             raise SigningError('Credential endpoint response exceeded size limit')
         return json.loads(raw) if raw else {}
     except error.HTTPError as exc:
-        raise SigningError(f'Credential endpoint returned HTTP {exc.code}; response withheld') from None
+        detail=safe_endpoint_detail(exc.read(32768))
+        raise SigningError(f'Credential endpoint returned HTTP {exc.code}; {detail}') from None
     except (error.URLError, TimeoutError, ValueError, OSError):
         raise SigningError('Credential endpoint failed; details withheld') from None
 
@@ -155,6 +198,7 @@ def fetch_credentials(env, transport=request_json, masker=mask):
         try:
             login = transport(BAO_ADDRESS + '/v1/auth/' + AUTH_PATH + '/login', {}, {'role': ROLE, 'jwt': jwt})
         except SigningError as exc:
+            print('OIDC expected-claim mismatches (names only): ' + claim_mismatches(jwt))
             raise SigningError('OpenBao OIDC login failed: ' + str(exc)) from None
         token = login['auth']['client_token']
         if not isinstance(token, str) or not token:
