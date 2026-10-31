@@ -163,7 +163,13 @@ real TIFF testing has exposed Adobe profile and RAW editing limitations.
   WB/color matrices but +0.35 EV baseline and additional camera-calibration and
   forward matrices. Build 7 adds these from experimental a7CR YAML metadata;
   real Lightroom confirmation and RAW normalization/cross-ISO/body checks remain
-  pending. See docs/brightness-comparison.md.
+  pending. Build 7 rendered comparison is now +0.1593 EV with closely aligned
+  RGB shifts and matching As Shot Temp/Tint. Build 8 adds production sensor
+  sampling plus an independent Adobe-DNG normalization diagnostic; actual
+  capture results remain pending. See docs/brightness-comparison.md.
+- [ ] Improve embedded preview calibration and test Library-to-Develop consistency.
+  Current preview/TIFF rendering omits the DNG-only baseline/camera-calibration
+  metadata; Library previews can differ from the eventual Develop rendering.
 - [ ] Inherit the reference photo's lens-correction enable preference for a
   compatible merged DNG. Initial feedback required manually enabling the
   correctly preselected lens profile. Keep this separate from copying source

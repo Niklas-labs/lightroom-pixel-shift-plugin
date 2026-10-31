@@ -47,6 +47,14 @@ real ARW decoded values/levels with an independent decoder and compare source
 and merged rendering under controlled white balance, profiles and baseline
 exposure. Do not infer equal rendering from matching slider values alone.
 
+Native sensor diagnostics have a Rust regression for integer counts, below-black
+values, odd crop origin/CFA phase, normalization and grid bounds. Five Python
+checks (`python scripts/test-raw-levels.py`) cover known registration offsets,
+measured white-level bias without removing it through fitting, rejected formula/
+crop mismatches, unrelated images reported as inconclusive, and independent
+LibRaw decoding of a synthetic mosaic DNG. CI runs these before packaging.
+Actual Sony decoder/count correspondence still requires the private capture.
+
 ## Required private capture corpus before claiming a7CR support is stable
 
 Keep originals outside git. For each capture record SHA-256, firmware, lens,

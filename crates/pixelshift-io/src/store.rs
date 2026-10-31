@@ -109,6 +109,19 @@ impl PackedSensor {
             backing,
         })
     }
+    pub(crate) fn normalization_levels(&self) -> ([f32; 4], [f32; 4]) {
+        (self.black, self.white)
+    }
+    pub(crate) fn native_code(&self, x: usize, y: usize) -> Result<u16> {
+        ensure!(
+            x < self.info.width && y < self.info.height,
+            "sample outside sensor"
+        );
+        match &self.backing {
+            Backing::Ram(Samples::U16(data)) => Ok(data[y * self.info.width + x]),
+            _ => anyhow::bail!("native diagnostics require a resident integer sensor"),
+        }
+    }
     pub fn set_sequence(&mut self, sequence: usize) {
         self.info.sequence = sequence;
     }

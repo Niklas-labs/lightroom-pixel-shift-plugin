@@ -9,6 +9,8 @@ use std::{
 };
 use tiff::encoder::TiffEncoder;
 
+mod diagnostics;
+pub use diagnostics::inspect_sensor_samples;
 mod store;
 pub use store::{PackedSensor, SourceStorage};
 mod output;

@@ -132,3 +132,55 @@ matrices, but adds +0.35 EV BaselineExposure, CameraCalibration1/2
 signatures. Build 7 now emits those tags from the a7CR YAML record. A new merge
 and Lightroom comparison are required to measure the improvement; independent
 real-RAW normalization and calibration across bodies/ISOs remain pending.
+
+## Check native RAW normalization (build 8 or later)
+
+The build 7 comparison measured +0.1593 EV rendered luminance relative to the
+Sony ARQ, with RGB shifts +0.1717/+0.1578/+0.1557 EV. As Shot Temp/Tint now match.
+That narrows the remaining investigation to a mostly neutral brightness
+mismatch; it does not justify subtracting the rendered difference from the RAW
+baseline. Before tuning rendering, compare actual sensor values.
+
+Download [check-raw-levels.py](https://github.com/Niklas-labs/lightroom-pixel-shift-plugin/blob/main/scripts/check-raw-levels.py)
+and use the helper from a build 8 or later `.lrplugin`. The plugin need not be
+loaded in Lightroom for this standalone diagnostic. Replace its path below if
+you keep the package elsewhere:
+
+```sh
+uv run --with numpy==2.3.5,rawpy==0.27.1,tifffile==2026.10.15 \
+  ~/Downloads/check-raw-levels.py \
+  --engine ~/Downloads/SonyPixelShift.lrplugin/bin/sony-pixelshift \
+  --arw ~/Desktop/PixelShift/DSC01582.ARW \
+  --reference-dng ~/Desktop/PixelShift/DSC01582.dng \
+  --out ~/Desktop/raw-level-comparison
+```
+
+Use the **original ARW and Adobe DNG converted from that exact ARW**, not the
+Sony ARQ or merged plugin DNG. Leave the original ARW on disk. The script checks
+OriginalRawFileName when the reference contains it. If the helper is too old,
+the diagnostic reports that explicitly rather than silently changing decoders.
+Share only `raw-level-comparison/report.json`; no new TIFF exports are needed.
+
+The engine's optional `inspect INPUT --sensor-samples` decodes one ARW through
+SonyArwDecoder and the same packed-u16 normalization used by merging. It returns
+at most 3072 native-code/normalized samples, actual per-phase black/white levels,
+CFA and preferred crop; ordinary `inspect` remains metadata-only. The Python
+script then independently decodes the Adobe DNG's mosaic with LibRaw, using DNG
+black/white tags and crop geometry. It reads one full sensor at a time, not a
+16-frame stack; decoder memory for one full frame is still required.
+
+A small integer registration search (±8 pixels, constrained by Bayer colors)
+handles differing decoder crop origins. Registration fits allow gain/offset
+only to establish corresponding samples, **without applying that fit to the
+reported photometry**. The report compares the original unmodified values.
+It measures native-code fits separately from normalized fits and per-phase EV.
+High correlation, low residuals and an unambiguous match are required; otherwise
+photometry is labeled inconclusive. Different crop sizes, variable black levels,
+non-Bayer/linear references, and unverified linearization tables are rejected.
+
+If correspondence is confirmed and native counts agree but normalization gains
+differ, inspect black/white levels before touching baseline exposure. If both
+counts and normalized values agree, continue investigating merging/rendering
+and profiles. These comparisons exclude WB, DNG baseline exposure, camera
+matrices, opcodes, lens corrections and Lightroom tone rendering. The script
+uploads nothing; its summary excludes original paths, serials and sampled pixels.

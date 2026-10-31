@@ -55,9 +55,12 @@ enum Commands {
         #[arg(long)]
         output: Option<PathBuf>,
     },
-    /// Inspect Sony capture metadata without decoding sensor pixels.
+    /// Inspect Sony capture metadata; optionally decode one sensor for diagnostics.
     Inspect {
         input: PathBuf,
+        /// Decode one RAW and return a small native/normalized sensor sample grid.
+        #[arg(long)]
+        sensor_samples: bool,
         #[arg(long)]
         output: Option<PathBuf>,
     },
@@ -148,12 +151,23 @@ fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
             "source_storages":["ram","disk"],
             "experimental": true,
             "autodetection": true,
+            "sensor_sample_diagnostics": true,
         })),
-        Commands::Inspect { input, .. } => Ok(json!({
-            "version": PROTOCOL_VERSION, "status": "inspected",
-            "metadata_backend": pixelshift_io::metadata_backend(),
-            "capture": pixelshift_io::inspect_capture(input)?,
-        })),
+        Commands::Inspect {
+            input,
+            sensor_samples,
+            ..
+        } => {
+            if *sensor_samples {
+                // Deliberately omit private capture metadata from this shareable record.
+                Ok(json!({"version": PROTOCOL_VERSION, "status": "sampled",
+                    "sensor": pixelshift_io::inspect_sensor_samples(input)?}))
+            } else {
+                Ok(json!({"version": PROTOCOL_VERSION, "status": "inspected",
+                    "metadata_backend": pixelshift_io::metadata_backend(),
+                    "capture": pixelshift_io::inspect_capture(input)?}))
+            }
+        }
         Commands::Cameras => {
             Ok(json!({"camera_models":models,"profiles":catalog.cameras,"experimental":true}))
         }

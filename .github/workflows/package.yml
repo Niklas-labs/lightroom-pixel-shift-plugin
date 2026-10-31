@@ -40,6 +40,8 @@ jobs:
       - run: python -m pip install rawpy==0.27.1 -r scripts/requirements-comparison.txt
       - name: Validate local brightness comparison diagnostics
         run: python scripts/test-comparison.py
+      - name: Validate native RAW normalization diagnostics
+        run: python scripts/test-raw-levels.py
       - run: cargo build --locked -p pixelshift-cli
       - name: Validate DNG samples and development with independent readers
         run: python scripts/test-dng.py --engine target/debug/sony-pixelshift
