@@ -10,6 +10,7 @@ import os
 import ssl
 from pathlib import Path
 import tempfile
+import subprocess
 import unittest
 from unittest.mock import patch
 from urllib import parse
@@ -145,6 +146,8 @@ class SigningTests(unittest.TestCase):
         calls = []
         def runner(command, label, **kwargs):
             calls.append(command)
+            if command == ['security','list-keychains','-d','user']:
+                return '"/Users/runner/login.keychain-db"\n"/Users/runner/Other Keys.keychain-db"\n'
             if 'create-keychain' in command:
                 Path(command[-1]).touch()
             if 'find-identity' in command:
@@ -160,6 +163,10 @@ class SigningTests(unittest.TestCase):
         self.assertIn('runtime', command)
         self.assertEqual(command[command.index('--sign')+1], IDENTITY)
         self.assertTrue(any('delete-keychain' in c for c in calls))
+        search_updates=[c for c in calls if c[:5]==['security','list-keychains','-d','user','-s']]
+        self.assertEqual(search_updates[0][5],str(self.directory/'signing.keychain-db'))
+        self.assertEqual(search_updates[-1][5:],['/Users/runner/login.keychain-db','/Users/runner/Other Keys.keychain-db'])
+
         self.assertFalse((self.directory / 'certificate.p12').exists())
         self.assertFalse((self.directory / 'signing.keychain-db').exists())
         # Failed signing also removes the import and its private keychain.
@@ -169,6 +176,9 @@ class SigningTests(unittest.TestCase):
         with self.assertRaises(signing.SigningError): signing.sign(binary,self.directory,failure)
         self.assertFalse((self.directory / 'signing.keychain-db').exists())
         self.assertFalse((self.directory / 'certificate.p12').exists())
+        search_updates=[c for c in calls if c[:5]==['security','list-keychains','-d','user','-s']]
+        self.assertEqual(search_updates[-1][5:],['/Users/runner/login.keychain-db','/Users/runner/Other Keys.keychain-db'])
+
 
     def test_apple_acceptance_required_receipt_is_bound_to_binary(self):
         binary = self.setup_binary()
@@ -195,6 +205,16 @@ class SigningTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 packager.build_package(binary,'macos-universal',self.root/'dist','a'*40,{}, {},
                                        macos_signing='developer-id',notarization_receipt=receipt)
+
+    def test_codesign_errors_are_actionable_without_echoing_secret_tool_output(self):
+        result=subprocess.CompletedProcess([],1,'','errSecInternalComponent: cannot access signing key')
+        with patch.object(signing.subprocess,'run',return_value=result):
+            with self.assertRaisesRegex(signing.SigningError,'errSecInternalComponent'):
+                signing.run(['codesign','--sign',IDENTITY,'binary'],'Developer ID signing')
+            with self.assertRaises(signing.SigningError) as error:
+                signing.run(['security','import','file.p12','-P','fixture-password'],'Certificate import')
+            self.assertNotIn('fixture-password',str(error.exception))
+            self.assertNotIn('errSecInternalComponent',str(error.exception))
 
     def test_notary_issuer_must_come_from_custom_metadata(self):
         response=notary_response()

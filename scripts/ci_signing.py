@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import shlex
 import ssl
 import shutil
 import subprocess
@@ -262,7 +263,12 @@ def run(command, label, timeout=120):
     except (OSError, subprocess.TimeoutExpired):
         raise SigningError(f'{label} could not finish; command details withheld') from None
     if result.returncode:
-        raise SigningError(f'{label} failed (exit {result.returncode}); tool output withheld')
+        # codesign receives only public identity hashes and file paths, never
+        # passwords/key material. Keep security import/ACL tool output private.
+        detail = 'tool output withheld'
+        if Path(command[0]).name == 'codesign':
+            detail = ' '.join((result.stderr or '').split())[:4000] or 'no codesign diagnostic'
+        raise SigningError(f'{label} failed (exit {result.returncode}); {detail}')
     return result.stdout
 
 
@@ -273,10 +279,13 @@ def sign(binary, directory, runner=run):
     password = secrets.token_urlsafe(32)
     mask(password)
     private_write(certificate, base64.b64decode(material['p12_base64'], validate=True))
+    original_search = None
     try:
+        original_search = shlex.split(runner(['security', 'list-keychains', '-d', 'user'], 'Reading keychain search list'))
         runner(['security', 'create-keychain', '-p', password, str(keychain)], 'Creating temporary keychain')
         runner(['security', 'set-keychain-settings', '-lut', '21600', str(keychain)], 'Configuring temporary keychain')
         runner(['security', 'unlock-keychain', '-p', password, str(keychain)], 'Unlocking temporary keychain')
+        runner(['security', 'list-keychains', '-d', 'user', '-s', str(keychain), *original_search], 'Adding signing keychain to search list')
         runner(['security', 'import', str(certificate), '-k', str(keychain), '-P', material['p12_password'],
                 '-T', '/usr/bin/codesign', '-T', '/usr/bin/security'], 'Importing Developer ID certificate')
         runner(['security', 'set-key-partition-list', '-S', 'apple-tool:,apple:,codesign:', '-s', '-k', password,
@@ -289,8 +298,12 @@ def sign(binary, directory, runner=run):
         runner(['codesign', '--verify', '--strict', '--all-architectures', '--verbose=2', str(binary)], 'Verifying signature')
     finally:
         certificate.unlink(missing_ok=True)
-        if keychain.exists():
-            runner(['security', 'delete-keychain', str(keychain)], 'Deleting temporary keychain')
+        try:
+            if original_search is not None:
+                runner(['security', 'list-keychains', '-d', 'user', '-s', *original_search], 'Restoring keychain search list')
+        finally:
+            if keychain.exists():
+                runner(['security', 'delete-keychain', str(keychain)], 'Deleting temporary keychain')
     print('Universal helper signed with Developer ID and secure timestamp.')
 
 
