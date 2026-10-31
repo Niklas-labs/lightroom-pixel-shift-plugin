@@ -23,13 +23,22 @@ pub struct SensorDiagnostics {
     cfa: [usize; 4],
     black: [f32; 4],
     white: [f32; 4],
+    decoder_white: [f32; 4],
+    normalization_source: Option<String>,
     normalization: &'static str,
     samples: Vec<SensorSample>,
 }
-pub fn inspect_sensor_samples(path: &Path) -> Result<SensorDiagnostics> {
-    let (metadata, store) = SonyArwDecoder.decode_to_store(path, SourceStorage::Ram, None)?;
+pub fn inspect_sensor_samples(
+    path: &Path,
+    catalog: &crate::profiles::Catalog,
+) -> Result<SensorDiagnostics> {
+    let (metadata, mut store) = SonyArwDecoder.decode_to_store(path, SourceStorage::Ram, None)?;
     let info = store.info();
-    sample_store(
+    let profile = catalog.find(&info.model)?;
+    if let Some(reference) = &profile.raw_normalization {
+        store.apply_reference_normalization(reference)?;
+    }
+    let mut report = sample_store(
         &store,
         metadata.source_crop().unwrap_or(Crop {
             x: 0,
@@ -37,7 +46,9 @@ pub fn inspect_sensor_samples(path: &Path) -> Result<SensorDiagnostics> {
             width: info.width,
             height: info.height,
         }),
-    )
+    )?;
+    report.normalization_source = profile.raw_normalization.as_ref().map(|r| r.source.clone());
+    Ok(report)
 }
 fn sample_store(store: &PackedSensor, crop: Crop) -> Result<SensorDiagnostics> {
     let info = store.info();
@@ -82,6 +93,8 @@ fn sample_store(store: &PackedSensor, crop: Crop) -> Result<SensorDiagnostics> {
         cfa: info.cfa,
         black,
         white,
+        decoder_white: store.decoder_white_levels(),
+        normalization_source: None,
         normalization: "(native_code - phase_black) / (phase_white - phase_black); no clipping",
         samples,
     })

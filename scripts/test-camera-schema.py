@@ -12,7 +12,7 @@ Draft202012Validator.check_schema(schema)
 validator = Draft202012Validator(schema)
 config = load_yaml((root / 'config/camera-profiles.yaml').read_text())
 validator.validate(config)
-for change in ['version', 'unknown', 'scale', 'offset', 'duplicate', 'null', 'rendering_exposure', 'rendering_matrix', 'rendering_unknown', 'rendering_null']:
+for change in ['version', 'unknown', 'scale', 'offset', 'duplicate', 'null', 'rendering_exposure', 'rendering_matrix', 'rendering_unknown', 'rendering_null', 'normalization_white', 'normalization_unknown', 'normalization_null']:
     bad = copy.deepcopy(config)
     camera = bad['cameras'][0]
     if change == 'version': bad['schema_version'] = 2
@@ -24,6 +24,9 @@ for change in ['version', 'unknown', 'scale', 'offset', 'duplicate', 'null', 're
     elif change == 'rendering_matrix': camera['dng_rendering']['forward_matrix_a'] = [1,2]
     elif change == 'rendering_unknown': camera['dng_rendering']['typo'] = True
     elif change == 'rendering_null': camera['dng_rendering'] = None
+    elif change == 'normalization_white': camera['raw_normalization']['white_level'] = 0
+    elif change == 'normalization_unknown': camera['raw_normalization']['typo'] = True
+    elif change == 'normalization_null': camera['raw_normalization'] = None
     else: camera['pixel_shift']['four'] = None
     assert not validator.is_valid(bad), change
 print('Camera catalog and JSON Schema checks passed')

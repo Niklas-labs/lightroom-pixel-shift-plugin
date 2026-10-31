@@ -161,7 +161,7 @@ fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
             if *sensor_samples {
                 // Deliberately omit private capture metadata from this shareable record.
                 Ok(json!({"version": PROTOCOL_VERSION, "status": "sampled",
-                    "sensor": pixelshift_io::inspect_sensor_samples(input)?}))
+                    "sensor": pixelshift_io::inspect_sensor_samples(input, &catalog)?}))
             } else {
                 Ok(json!({"version": PROTOCOL_VERSION, "status": "inspected",
                     "metadata_backend": pixelshift_io::metadata_backend(),
@@ -271,7 +271,7 @@ fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
                     reference_frames.push(frame);
                     (metadata, None)
                 } else {
-                    let (metadata, store) = if *fixtures {
+                    let (metadata, mut store) = if *fixtures {
                         pixelshift_io::decode_stored(
                             path,
                             true,
@@ -285,6 +285,11 @@ fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
                             scratch.as_deref(),
                         )?
                     };
+                    if !*fixtures && let Some(reference) = &profile.raw_normalization {
+                        store.apply_reference_normalization(reference)?;
+                        diagnostics.record(format!("RAW normalization: decoder white {:?}; reference white {:?}; black {:?}",
+                            store.decoder_white_levels(), store.normalization_levels().1, store.normalization_levels().0))?;
+                    }
                     (metadata, Some(store))
                 };
                 ensure!(

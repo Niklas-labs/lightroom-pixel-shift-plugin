@@ -27,10 +27,34 @@ pub struct Profile {
     pub calibration_source: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dng_rendering: Option<DngRendering>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw_normalization: Option<RawNormalization>,
     pub cfa: String,
     pub denoise: bool,
     pub pixel_shift: Layouts,
     pub notes: String,
+}
+/// Reference white scale for native integer samples, guarded against unknown
+/// decoder conventions. Preserve native codes and decoder-reported black levels.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct RawNormalization {
+    pub source: String,
+    pub decoder_white_level: u16,
+    pub white_level: u16,
+}
+impl RawNormalization {
+    pub fn validate(&self) -> Result<()> {
+        ensure!(
+            !self.source.trim().is_empty(),
+            "RAW normalization needs provenance"
+        );
+        ensure!(
+            self.decoder_white_level > 0 && self.white_level > 0,
+            "invalid RAW reference white level"
+        );
+        Ok(())
+    }
 }
 /// DNG rendering metadata in reference-camera coordinates. These matrices and
 /// exposure are tags only: never multiply them into the merged sensor samples.
@@ -108,11 +132,10 @@ impl Catalog {
         }
         if let Some(cameras) = raw.get("cameras").and_then(|v| v.as_array()) {
             for camera in cameras {
-                if let Some(rendering) = camera.get("dng_rendering") {
-                    ensure!(
-                        rendering.is_object(),
-                        "dng_rendering must be an object, not null"
-                    );
+                for field in ["dng_rendering", "raw_normalization"] {
+                    if let Some(record) = camera.get(field) {
+                        ensure!(record.is_object(), "{field} must be an object, not null");
+                    }
                 }
                 if let Some(layouts) = camera.get("pixel_shift").and_then(|v| v.as_object()) {
                     ensure!(
@@ -155,6 +178,9 @@ impl Catalog {
                 "invalid validation status"
             );
             p.cfa_pattern()?;
+            if let Some(normalization) = &p.raw_normalization {
+                normalization.validate()?;
+            }
             if let Some(rendering) = &p.dng_rendering {
                 rendering.validate()?;
             }
@@ -321,6 +347,38 @@ mod tests {
         assert!(legacy.cameras[0].dng_rendering.is_none());
         let profile = Catalog::embedded().unwrap().cameras.remove(0);
         assert!((profile.dng_rendering.unwrap().baseline_exposure_ev - 0.35).abs() < 1e-6);
+    }
+    #[test]
+    fn validates_reference_raw_normalization_and_legacy_catalogs() {
+        let baseline: serde_json::Value = serde_saphyr::from_str(EMBEDDED).unwrap();
+        for case in 0..6 {
+            let mut value = baseline.clone();
+            let record = &mut value["cameras"][0]["raw_normalization"];
+            match case {
+                0 => record["white_level"] = 0.into(),
+                1 => record["decoder_white_level"] = (-1).into(),
+                2 => record["source"] = "".into(),
+                3 => record["typo"] = true.into(),
+                4 => record["white_level"] = 65536.into(),
+                _ => *record = serde_json::Value::Null,
+            }
+            assert!(
+                Catalog::parse(&serde_saphyr::to_string(&value).unwrap()).is_err(),
+                "case {case}"
+            );
+        }
+        let mut legacy = baseline;
+        legacy["cameras"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("raw_normalization");
+        assert!(
+            Catalog::parse(&serde_saphyr::to_string(&legacy).unwrap())
+                .unwrap()
+                .cameras[0]
+                .raw_normalization
+                .is_none()
+        );
     }
     #[test]
     fn rejects_invalid_profiles() {

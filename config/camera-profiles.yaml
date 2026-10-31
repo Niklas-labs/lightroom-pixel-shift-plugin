@@ -12,6 +12,13 @@ cameras:
     decoder: sony_arw
     metadata: sony_pixel_shift_v1
     calibration_source: raw_metadata_and_rawler_catalog
+    # Native codes agree exactly with the Adobe DNG; normalize to its white scale.
+    # Reject other decoder white levels rather than guessing RAW-mode compatibility.
+    raw_normalization:
+      source: "Matched original ARW and Adobe DNG sensor samples; black 512, reference white 16383; all four Bayer phases agree."
+      decoder_white_level: 15360
+      white_level: 16383
+
     # Experimental: reproduce reference metadata, without scaling RAW samples.
     dng_rendering:
       source: "Lightroom Classic conversion of an original a7CR ARW; single-capture reference, full rendering validation pending."

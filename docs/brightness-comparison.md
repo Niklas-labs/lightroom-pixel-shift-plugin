@@ -184,3 +184,19 @@ counts and normalized values agree, continue investigating merging/rendering
 and profiles. These comparisons exclude WB, DNG baseline exposure, camera
 matrices, opcodes, lens corrections and Lightroom tone rendering. The script
 uploads nothing; its summary excludes original paths, serials and sampled pixels.
+
+### Confirmed white-scale mismatch and build 9
+
+The first real sensor report confirms the same source filename, unambiguous
+zero-offset correspondence, sampled native-code gain 1/offset 0 on every Bayer
+phase, and matching black 512. Our decoder uses white 15360; Adobe uses 16383.
+All phases show normalized gain 1.068898164 (+0.096124417 EV), with negligible
+residuals. This directly identifies a scale difference before rendering.
+
+Build 9 adds reference white 16383 to the guarded a7CR YAML normalization record.
+The +0.35 EV baseline and color calibration remain unchanged. Run the same
+`check-raw-levels.py` command with build 9's helper: `source.decoder_white` should
+remain 15360, `source.white` should be 16383, and confirmed normalized EV should
+be near zero. Then make a fresh Lightroom merge at As Shot/Exposure 0 and repeat
+the TIFF comparison. This confirms real output behavior rather than assuming
+that a correct denominator guarantees identical Adobe rendering.

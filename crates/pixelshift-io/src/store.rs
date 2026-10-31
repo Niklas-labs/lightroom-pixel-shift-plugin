@@ -30,6 +30,7 @@ pub struct PackedSensor {
     info: SensorInfo,
     black: [f32; 4],
     white: [f32; 4],
+    decoder_white: [f32; 4],
     backing: Backing,
 }
 impl PackedSensor {
@@ -106,10 +107,45 @@ impl PackedSensor {
             info,
             black,
             white,
+            decoder_white: white,
             backing,
         })
     }
-    pub(crate) fn normalization_levels(&self) -> ([f32; 4], [f32; 4]) {
+    /// Change only the normalization denominator; stored native samples stay intact.
+    /// Accept either the documented decoder scale or an already matching reference
+    /// scale. Unknown RAW variants fail rather than receive a guessed conversion.
+    pub fn apply_reference_normalization(
+        &mut self,
+        record: &crate::profiles::RawNormalization,
+    ) -> Result<()> {
+        record.validate()?;
+        ensure!(
+            matches!(
+                &self.backing,
+                Backing::Ram(Samples::U16(_)) | Backing::Disk { integer: true, .. }
+            ),
+            "reference RAW normalization requires native u16 samples"
+        );
+        let expected = record.decoder_white_level as f32;
+        let target = record.white_level as f32;
+        ensure!(
+            self.decoder_white == [expected; 4] || self.decoder_white == [target; 4],
+            "unverified decoder white levels {:?}; profile expects {} or reference {}; update the camera normalization reference",
+            self.decoder_white,
+            expected,
+            target
+        );
+        ensure!(
+            self.black.iter().all(|black| target > *black),
+            "reference white level must exceed every black level"
+        );
+        self.white = [target; 4];
+        Ok(())
+    }
+    pub fn decoder_white_levels(&self) -> [f32; 4] {
+        self.decoder_white
+    }
+    pub fn normalization_levels(&self) -> ([f32; 4], [f32; 4]) {
         (self.black, self.white)
     }
     pub(crate) fn native_code(&self, x: usize, y: usize) -> Result<u16> {
@@ -199,6 +235,75 @@ impl SensorSource for PackedSensor {
 mod tests {
     use super::*;
     use pixelshift_core::{ImageSource, Mode, Options, PreparedMerge, Region, SonyA7Cr, merge};
+    #[test]
+    fn reference_white_normalization_preserves_native_codes_and_both_backends() {
+        let reference = crate::profiles::RawNormalization {
+            source: "matched Adobe DNG".into(),
+            decoder_white_level: 15360,
+            white_level: 16383,
+        };
+        let codes = [500u16, 512, 1024, 8192, 15360, 16383, 18000, 65535];
+        for storage in [SourceStorage::Ram, SourceStorage::Disk] {
+            let info = SensorInfo {
+                width: 8,
+                height: 8,
+                cfa: [0, 1, 1, 2],
+                model: "ILCE-7CR".into(),
+                sequence: 1,
+            };
+            let data: Vec<_> = (0..64).map(|i| codes[i % 8]).collect();
+            let mut source = PackedSensor::from_u16(
+                info.clone(),
+                data.clone(),
+                [512.; 4],
+                [15360.; 4],
+                storage,
+                None,
+            )
+            .unwrap();
+            source.apply_reference_normalization(&reference).unwrap();
+            source.apply_reference_normalization(&reference).unwrap(); // Idempotent: no sample gain baked in.
+            assert_eq!(source.decoder_white_levels(), [15360.; 4]);
+            assert_eq!(source.normalization_levels(), ([512.; 4], [16383.; 4]));
+            let frame = source.read_rows(0, 8).unwrap();
+            for (index, value) in frame.pixels.iter().enumerate() {
+                let expected = (data[index] as f64 - 512.) / (16383. - 512.);
+                assert!((*value as f64 - expected).abs() < 3e-7);
+                if storage == SourceStorage::Ram {
+                    assert_eq!(
+                        source.native_code(index % 8, index / 8).unwrap(),
+                        data[index]
+                    );
+                }
+            }
+            assert!(frame.pixels[0] < 0.);
+            assert_eq!(frame.pixels[5], 1.);
+            assert!(frame.pixels[6] > 1.);
+            let mut already_reference = PackedSensor::from_u16(
+                info.clone(),
+                data.clone(),
+                [512.; 4],
+                [16383.; 4],
+                storage,
+                None,
+            )
+            .unwrap();
+            already_reference
+                .apply_reference_normalization(&reference)
+                .unwrap();
+            assert_eq!(
+                frame.pixels,
+                already_reference.read_rows(0, 8).unwrap().pixels
+            );
+            let mut unknown =
+                PackedSensor::from_u16(info, data, [512.; 4], [12000.; 4], storage, None).unwrap();
+            assert!(unknown.apply_reference_normalization(&reference).is_err());
+            assert_eq!(unknown.normalization_levels().1, [12000.; 4]);
+            let mut invalid = reference.clone();
+            invalid.white_level = 500;
+            assert!(source.apply_reference_normalization(&invalid).is_err());
+        }
+    }
     #[test]
     fn packed_backends_match_float_reference_at_every_seam() {
         let scratch = tempfile::tempdir().unwrap();

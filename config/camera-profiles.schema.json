@@ -160,6 +160,9 @@
         },
         "dng_rendering": {
           "$ref": "#/$defs/dngRendering"
+        },
+        "raw_normalization": {
+          "$ref": "#/$defs/rawNormalization"
         }
       }
     },
@@ -210,6 +213,31 @@
         },
         "forward_matrix_d65": {
           "$ref": "#/$defs/matrix3x3"
+        }
+      }
+    },
+    "rawNormalization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "decoder_white_level",
+        "white_level"
+      ],
+      "properties": {
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "decoder_white_level": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "white_level": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
         }
       }
     }

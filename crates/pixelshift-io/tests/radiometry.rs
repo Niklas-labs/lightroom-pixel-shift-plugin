@@ -176,3 +176,105 @@ fn native_sensor_to_dng_preserves_absolute_brightness_and_color() {
         "{cases} native sensor -> DNG cases: max sample error {worst_error:.9}, max mean channel bias {worst_ev:.9} EV"
     );
 }
+
+#[test]
+fn profiled_a7cr_native_merge_matches_adobe_normalized_sensor_scale() {
+    use pixelshift_core::{CameraProfile, ImageSource};
+    use pixelshift_io::profiles::Catalog;
+    let temp = tempfile::tempdir().unwrap();
+    let catalog = Catalog::embedded().unwrap();
+    let profile = catalog.find("ILCE-7CR").unwrap();
+    let native_scene = |x: f32, y: f32, c: usize| 2000. + c as f32 * 2000. + 4. * x + 2. * y;
+    for mode in [Mode::Four, Mode::Sixteen, Mode::Denoise] {
+        for storage in [SourceStorage::Ram, SourceStorage::Disk] {
+            let count = if mode == Mode::Sixteen { 16 } else { 4 };
+            let sources: Vec<Box<dyn SensorSource>> = (0..count)
+                .map(|i| {
+                    let (dx, dy) = shift(mode, i);
+                    assert_eq!(profile.shift(mode, i), (dx, dy));
+                    let cfa = [0, 1, 1, 2];
+                    let codes = (0..40 * 32)
+                        .map(|p| {
+                            let (x, y) = (p % 40, p / 40);
+                            let c = cfa[(y % 2) * 2 + x % 2];
+                            (512. + native_scene(x as f32 + dx, y as f32 + dy, c)) as u16
+                        })
+                        .collect();
+                    let mut store = PackedSensor::from_u16(
+                        SensorInfo {
+                            width: 40,
+                            height: 32,
+                            cfa,
+                            model: "ILCE-7CR".into(),
+                            sequence: i + 1,
+                        },
+                        codes,
+                        [512.; 4],
+                        [15360.; 4],
+                        storage,
+                        Some(temp.path()),
+                    )
+                    .unwrap();
+                    store
+                        .apply_reference_normalization(profile.raw_normalization.as_ref().unwrap())
+                        .unwrap();
+                    Box::new(store) as Box<dyn SensorSource>
+                })
+                .collect();
+            let source = PreparedMerge::from_sources(
+                &sources,
+                profile,
+                &Options {
+                    mode,
+                    motion_threshold: 0.08,
+                    alignment_radius: 0,
+                },
+            )
+            .unwrap();
+            let mut color: Color = serde_json::from_value(serde_json::json!({
+                "white_balance": [2.,1.,1.5],
+                "xyz_to_camera": [0.82,-0.2976,-0.0719,-0.4296,1.2053,0.2532,-0.0429,0.1282,0.5774]
+            }))
+            .unwrap();
+            color.dng_rendering = profile.dng_rendering.clone();
+            let path = temp
+                .path()
+                .join(format!("profiled-{mode:?}-{storage:?}.dng"));
+            write_dng_from_source(
+                &path,
+                &source,
+                &color,
+                WriteOptions {
+                    compression: OutputCompression::None,
+                    strip_rows: 7,
+                },
+                &mut |_, _| Ok(()),
+            )
+            .unwrap();
+            let decoded = rawler::decode_file(&path).unwrap();
+            let rawler::RawImageData::Float(rgb) = decoded.data else {
+                panic!("expected float DNG")
+            };
+            let (width, height) = source.dimensions();
+            let origin = source.report(0).sensor_origin;
+            let scale = if mode == Mode::Sixteen { 2. } else { 1. };
+            for y in 0..height {
+                for x in 0..width {
+                    for c in 0..3 {
+                        let expected = native_scene(
+                            origin.0 as f32 + x as f32 / scale,
+                            origin.1 as f32 + y as f32 / scale,
+                            c,
+                        ) as f64
+                            / (16383. - 512.);
+                        let actual = rgb[(y * width + x) * 3 + c] as f64;
+                        assert!(
+                            (actual - expected).abs() < 1e-6,
+                            "{mode:?}/{storage:?}: {actual} vs {expected}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+}

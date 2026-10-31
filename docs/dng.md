@@ -12,7 +12,9 @@ Menu commands are registered under **Library → Plug-in Extras** only.
   camera-RGB channels, 32-bit IEEE float, lossless Deflate 32-row strips by default
   (uncompressed remains available through job configuration).
 - Samples retain the merger's normalized black-subtracted camera values, including
-  negative noise and values above nominal white. BlackLevel is zero and WhiteLevel
+  negative noise and values above nominal white. The a7CR profile normalizes
+  native codes against the measured Adobe white reference 16383 (black remains
+  decoder-owned, 512 in the validated capture). BlackLevel is zero and WhiteLevel
   is one per channel. No WB, gamma, display matrix, tone curve or Lightroom edits
   are baked into this image. No fabricated CFA tags are written.
 - Original XYZ-to-camera matrices for illuminant A (tungsten, slot 1) and D65
@@ -142,6 +144,24 @@ independent reader and exact synthetic photometry after writing/decoding. Full
 Adobe profile behavior, real RAW normalization, additional ISOs and other camera
 bodies still require reference captures. The embedded preview/TIFF renderer is
 an approximation that does not implement Adobe's rendering/profile pipeline.
+
+## Reference white-scale correction (build 9)
+
+Matching the same source ARW against its Adobe-converted mosaic DNG confirms
+sampled native integer counts agree at zero pixel offset. Both report black 512,
+but rawler supplies white 15360 and Adobe writes white 16383. The old normalization
+therefore multiplies samples by `(16383-512)/(15360-512) = 1.068898`, or +0.096124 EV,
+relative to Adobe. This is consistent with a larger rendered difference after
+Lightroom's nonlinear tone mapping; the rendered +0.1593 EV is not itself a RAW
+exposure offset.
+
+Build 9 uses a guarded a7CR `raw_normalization` YAML record to select reference
+white 16383 before any merge processing. Native codes and black levels stay
+intact; AsShotNeutral, color/calibration matrices, forward matrices, and +0.35 EV
+BaselineExposure are unchanged. Diagnostics report both original decoder white
+and effective white. Unknown decoder white conventions are rejected instead of
+silently applying this capture's scale to an unverified variant. Real normalized
+sample parity and fresh Lightroom render comparison remain acceptance tests.
 
 ## Streamed/compressed output acceptance
 

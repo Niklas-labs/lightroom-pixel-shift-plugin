@@ -21,6 +21,7 @@ captures and leave `validation_status` experimental until acceptance passes.
 | `decoder` | Supported RAW adapter; currently `sony_arw` |
 | `metadata` | Capture-tag interpretation; currently `sony_pixel_shift_v1` |
 | `calibration_source` | Currently `raw_metadata_and_rawler_catalog` |
+| `raw_normalization` | Optional guarded reference white scale and provenance for native-u16 samples |
 | `dng_rendering` | Optional reference-backed baseline exposure, A/D65 camera-calibration and forward matrices, matching calibration signature, and provenance |
 | `cfa` | Expected row-major uncropped 2x2 Bayer pattern |
 | `denoise` | Whether ordinary burst noise reduction is allowed |
@@ -71,7 +72,23 @@ other bodies/ISO settings before declaring the model validated. No Adobe look
 tables, tone curves or profile name are copied. TIFF and the approximate embedded
 preview renderer do not use this DNG-only metadata.
 
-Profiles without this optional block retain identity camera calibration, no
+`raw_normalization` contains `source`, `decoder_white_level`, and `white_level`.
+The a7CR record uses decoder white 15360 and reference white 16383, established
+by matching samples from an original ARW to its Adobe-converted mosaic DNG.
+Native codes and decoder black levels are preserved; the effective denominator
+becomes `16383 - black`. This aligns coordinate conventions with the +0.35 EV
+Adobe baseline rather than applying an empirical rendered exposure correction.
+
+The guard accepts exactly the configured decoder scale, or a decoder already
+using the reference scale. Other decoder levels fail explicitly; do not reuse
+this 14-bit reference for unverified RAW modes. Both storage backends and all
+production merge modes apply the reference before alignment and reconstruction.
+Float fixtures retain their supplied normalized values. Profiles without this
+block keep decoder normalization. Sensor diagnostics report original
+`decoder_white`, effective `white`, and provenance, using the same reference
+application as production merging. Legacy decoder-only APIs remain unprofiled.
+
+Profiles without `dng_rendering` retain identity camera calibration, no
 forward matrices and 0 EV baseline. The schema remains version 1 with an additive
 optional record; older catalog files remain valid with the new engine.
 

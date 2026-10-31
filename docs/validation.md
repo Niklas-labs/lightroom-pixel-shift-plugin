@@ -53,7 +53,13 @@ checks (`python scripts/test-raw-levels.py`) cover known registration offsets,
 measured white-level bias without removing it through fitting, rejected formula/
 crop mismatches, unrelated images reported as inconclusive, and independent
 LibRaw decoding of a synthetic mosaic DNG. CI runs these before packaging.
-Actual Sony decoder/count correspondence still requires the private capture.
+The first private a7CR report confirms zero-offset sampled integer-count parity
+but a 15360-vs-16383 white-scale difference (+0.096124 EV). Build 9's guarded
+reference normalization is tested on RAM/disk stores, preserving codes, negatives,
+headroom and idempotence, and rejecting unknown decoder scales. An additional
+six-case analytic native-u16 → profiled merge → DNG test verifies Adobe-normalized
+sample values in all three modes and both storage backends. Real sample parity
+and Lightroom rendering after this correction still require capture retesting.
 
 ## Required private capture corpus before claiming a7CR support is stable
 

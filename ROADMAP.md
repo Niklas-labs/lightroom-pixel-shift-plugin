@@ -165,8 +165,11 @@ real TIFF testing has exposed Adobe profile and RAW editing limitations.
   real Lightroom confirmation and RAW normalization/cross-ISO/body checks remain
   pending. Build 7 rendered comparison is now +0.1593 EV with closely aligned
   RGB shifts and matching As Shot Temp/Tint. Build 8 adds production sensor
-  sampling plus an independent Adobe-DNG normalization diagnostic; actual
-  capture results remain pending. See docs/brightness-comparison.md.
+  sampling plus an independent Adobe-DNG normalization diagnostic. The real
+  report confirms sampled native-code parity, but decoder white 15360 vs Adobe
+  16383 with matching black 512, giving +0.096124 EV normalized gain. Build 9
+  adds guarded reference-white normalization from YAML; real normalized parity
+  and fresh Lightroom render confirmation remain pending. See docs/brightness-comparison.md.
 - [ ] Improve embedded preview calibration and test Library-to-Develop consistency.
   Current preview/TIFF rendering omits the DNG-only baseline/camera-calibration
   metadata; Library previews can differ from the eventual Develop rendering.
