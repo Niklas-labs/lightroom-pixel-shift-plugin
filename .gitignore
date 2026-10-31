@@ -8,3 +8,8 @@
 *.tiff
 /dist/
 __pycache__/
+
+# Exportable signing credentials belong in OpenBao, never source control.
+*.p12
+*.p8
+signing-material*.json

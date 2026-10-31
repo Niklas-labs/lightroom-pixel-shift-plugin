@@ -77,6 +77,25 @@ class PackagingTests(unittest.TestCase):
         self.assertNotEqual(missing.returncode, 0)
         self.assertIn('PixelShiftProgress.lua', missing.stderr)
 
+    def test_signed_package_requires_matching_receipt_and_labels_helper(self):
+        receipt = {'status': 'Accepted', 'id': '00000000-0000-0000-0000-000000000002',
+                   'engine_sha256': hashlib.sha256(self.binary.read_bytes()).hexdigest()}
+        archive = PACKAGER.build_package(self.binary, 'macos-universal', self.root / 'dist', 'a'*40,
+                                        self.metadata, self.info, macos_signing='developer-id',
+                                        notarization_receipt=receipt)
+        with zipfile.ZipFile(archive) as zipped:
+            manifest=json.loads(zipped.read('SonyPixelShift.lrplugin/manifest.json'))
+            self.assertTrue(manifest['notarized'])
+            self.assertEqual(manifest['macos_signing'],'developer-id')
+            self.assertEqual(manifest['distribution'],'developer-id')
+            self.assertEqual(manifest['notarization_submission_id'],receipt['id'])
+            self.assertIn(b'Developer ID signed and notarized',zipped.read('INSTALL.txt'))
+            self.assertNotIn(b'This development build is not notarized',zipped.read('INSTALL.txt'))
+            self.assertFalse(any('openbao' in name for name in zipped.namelist()))
+        with self.assertRaises(ValueError):
+            PACKAGER.build_package(self.binary,'windows-x86_64',self.root/'bad','a'*40,
+                                   self.metadata,self.info,macos_signing='developer-id',notarization_receipt=receipt)
+
     def test_windows_uses_exe_and_records_platform(self):
         archive = self.package('windows-x86_64')
         with zipfile.ZipFile(archive) as zipped:

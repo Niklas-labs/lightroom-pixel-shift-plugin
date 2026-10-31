@@ -22,14 +22,19 @@ license/notice files. They require a native Rust metadata backend; the assembler
 refuses an engine reporting an external ExifTool dependency. No Python, Perl,
 ExifTool, Rust toolchain or developer PATH is required at runtime.
 
-macOS binaries are assembled with `lipo` and ad-hoc signed for local execution.
-They are **not publisher-signed or notarized**. Windows development binaries are
-also unsigned. OS download security prompts may require allowing the specific
-helper before use. Developer ID signing, hardened runtime, secure timestamps and notarization of a
-staple-capable distribution container are tracked release work in ROADMAP.md.
-See [macOS execution](lightroom-testing.md#macos-execution) for explicit per-helper
-quarantine instructions for trusted development builds; the plugin never changes
-quarantine automatically.
+macOS binaries are assembled with `lipo`. By default they are ad-hoc signed
+**development** builds. The optional Developer ID/notarization path retrieves
+Apple credentials from OpenBao using GitHub OIDC, not GitHub secrets. See
+[OpenBao signing setup](openbao-signing.md) for exact policy, role, credential
+import and the `MACOS_SIGNING_ENABLED=true` repository variable. Once enabled,
+signing or Apple acceptance failures stop publication; there is no ad-hoc
+fallback. The manifest identifies signing/notarization status.
+
+Windows development binaries remain unsigned. For development macOS artifacts,
+see [macOS execution](lightroom-testing.md#macos-execution) for explicit per-helper
+quarantine instructions. Signed/notarized helper ZIPs need online ticket lookup;
+stapled offline containers and real browser-download acceptance remain follow-ups.
+The plugin never changes quarantine automatically.
 
 CI uploads with `actions/upload-artifact` v7 and `archive: false`, preserving
 our ZIP bytes and their executable permission attributes. Uploading the unpacked

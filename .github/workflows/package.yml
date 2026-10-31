@@ -20,6 +20,7 @@ jobs:
       - run: python scripts/test-camera-schema.py
       - name: Install Lua 5.1 for extracted toolkit checks
         run: sudo apt-get update && sudo apt-get install -y lua5.1
+      - run: python scripts/test-ci-signing.py
       - run: python scripts/test-package-unit.py
         env:
           PIXELSHIFT_TEST_LUA: lua5.1
@@ -45,7 +46,13 @@ jobs:
     needs: [assembler-tests, engine-tests]
     # Current standard Apple Silicon runner; verify the executing architecture.
     runs-on: macos-15
+    timeout-minutes: 45
+    environment: macos-signing
+    permissions:
+      contents: read
+      id-token: write
     env:
+      MACOS_SIGNING_ENABLED: ${{ vars.MACOS_SIGNING_ENABLED }}
       MACOSX_DEPLOYMENT_TARGET: '12.0'
     steps:
       - uses: actions/checkout@v4
@@ -58,20 +65,39 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
+      - name: Validate signing mode
+        run: python scripts/ci_signing.py mode
       - name: Build both macOS architectures
         run: |
           cargo build --release --locked --target aarch64-apple-darwin -p pixelshift-cli
           cargo build --release --locked --target x86_64-apple-darwin -p pixelshift-cli
-      - name: Assemble and ad-hoc sign universal engine
+      - name: Assemble universal engine
         run: |
           mkdir -p target/universal
           lipo -create target/aarch64-apple-darwin/release/sony-pixelshift target/x86_64-apple-darwin/release/sony-pixelshift -output target/universal/sony-pixelshift
           lipo target/universal/sony-pixelshift -verify_arch arm64 x86_64
-          codesign --force --sign - --timestamp=none target/universal/sony-pixelshift
-          codesign --verify --verbose target/universal/sony-pixelshift
           otool -L target/universal/sony-pixelshift
-      - name: Package self-contained plugin
-        run: python scripts/package-plugin.py --binary target/universal/sony-pixelshift --platform macos-universal --revision '${{ github.sha }}'
+      - name: Fetch signing credentials from OpenBao using GitHub OIDC
+        if: vars.MACOS_SIGNING_ENABLED == 'true'
+        run: python scripts/ci_signing.py fetch
+      - name: Developer ID sign universal helper
+        if: vars.MACOS_SIGNING_ENABLED == 'true'
+        run: python scripts/ci_signing.py sign --binary target/universal/sony-pixelshift
+      - name: Require Apple notarization acceptance
+        if: vars.MACOS_SIGNING_ENABLED == 'true'
+        run: python scripts/ci_signing.py notarize --binary target/universal/sony-pixelshift --receipt target/notarization-receipt.json
+      - name: Package signed and notarized plugin
+        if: vars.MACOS_SIGNING_ENABLED == 'true'
+        run: python scripts/package-plugin.py --binary target/universal/sony-pixelshift --platform macos-universal --revision '${{ github.sha }}' --macos-signing developer-id --notarization-receipt target/notarization-receipt.json
+      - name: Package ad-hoc development build
+        if: vars.MACOS_SIGNING_ENABLED != 'true'
+        run: |
+          codesign --force --sign - --timestamp=none target/universal/sony-pixelshift
+          codesign --verify --strict --all-architectures --verbose=2 target/universal/sony-pixelshift
+          python scripts/package-plugin.py --binary target/universal/sony-pixelshift --platform macos-universal --revision '${{ github.sha }}'
+      - name: Remove temporary signing credentials and keychain
+        if: always()
+        run: python scripts/ci_signing.py cleanup
       - run: python -m pip install PyYAML==6.0.3
       - name: Smoke-test extracted Apple Silicon package
         run: python scripts/test-package.py --archive-dir dist --platform macos-universal --machine arm64,aarch64

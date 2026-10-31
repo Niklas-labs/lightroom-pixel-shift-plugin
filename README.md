@@ -155,3 +155,7 @@ Lightroom. DNG does not contain copied Sony MakerNotes or correction opcodes.
 
 Read [dependency evaluation](docs/dependencies.md), [architecture](docs/architecture.md)
 and [validation requirements](docs/validation.md) before calling a profile stable.
+
+macOS publisher signing can use [OpenBao with GitHub OIDC](docs/openbao-signing.md).
+The opt-in path requires Developer ID signing and Apple notarization before
+publishing; development builds remain ad-hoc signed until configured.

@@ -228,8 +228,13 @@ dispatch only after profiling, while keeping distributed binaries compatible.
 - [ ] Notarize the macOS distribution with `notarytool`; choose a supported DMG
   or PKG container and staple its ticket. Standalone Mach-O binaries and ZIPs
   cannot themselves carry a stapled ticket. Retain ZIP development artifacts.
-- [ ] Add CI signing/notarization credentials through repository secrets, verify
-  signatures and notarization results, and test a normal browser download with
+- [x] Implement opt-in OpenBao KV v2 credential retrieval using GitHub OIDC, with
+  exact repository/branch/workflow/environment claims, short-lived sessions and
+  ephemeral keychain cleanup. No Apple credentials in GitHub secrets.
+- [x] Gate signed packages on Developer ID signing and Apple acceptance, bind
+  notarization receipts to binary hashes, and label development builds explicitly.
+- [ ] Provision the live OpenBao role/value, enable signing, verify actual Apple
+  signatures/notarization, and test a normal browser download with
   quarantine intact on a fresh macOS account (Intel and Apple Silicon). Installation
   should not require `xattr` or a global Gatekeeper change.
 - [ ] Add tagged release assets and Windows publisher signing; preserve native

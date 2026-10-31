@@ -66,11 +66,23 @@ def copy_notices(destination, metadata):
         'The package manifest records the exact source revision used for this build.\n', encoding='utf-8')
 
 
-def build_package(binary, platform, output_dir, revision, metadata, info=None):
+def build_package(binary, platform, output_dir, revision, metadata, info=None, macos_signing="adhoc", notarization_receipt=None):
     if platform not in PLATFORMS:
         raise ValueError('Unsupported package platform')
     if not revision or any(c not in '0123456789abcdef' for c in revision.lower()) or len(revision) != 40:
         raise ValueError('revision must be the full 40-character Git commit SHA')
+    if macos_signing not in ('adhoc', 'developer-id'):
+        raise ValueError('Unsupported signing mode')
+    notarized = macos_signing == 'developer-id'
+    if notarized:
+        if platform != 'macos-universal' or not isinstance(notarization_receipt, dict) or notarization_receipt.get('status') != 'Accepted':
+            raise ValueError('Developer ID packages require an accepted helper notarization receipt')
+        import uuid
+        uuid.UUID(notarization_receipt['id'])
+        if notarization_receipt.get('engine_sha256') != hashlib.sha256(binary.read_bytes()).hexdigest():
+            raise ValueError('Notarization receipt does not match the packaged binary')
+    elif notarization_receipt is not None:
+        raise ValueError('Notarization receipt requires Developer ID signing')
     info = info or read_engine_info(binary)
     version = info['engine_version']
     if not version or any(c not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-_' for c in version):
@@ -101,14 +113,24 @@ def build_package(binary, platform, output_dir, revision, metadata, info=None):
         'metadata_backend': info['metadata_backend'],
         'engine': 'bin/' + PLATFORMS[platform],
         'engine_sha256': hashlib.sha256(engine.read_bytes()).hexdigest(),
-        'distribution': 'development',
-        'notarized': False,
+        'distribution': 'developer-id' if notarized else 'development',
+        'notarized': notarized,
+        'macos_signing': macos_signing if platform == 'macos-universal' else None,
+        'notarization_submission_id': notarization_receipt['id'] if notarized else None,
     }
     (plugin / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
     copy_notices(plugin / 'licenses', metadata)
     testing = ROOT / 'docs' / 'lightroom-testing.md'
     if testing.is_file():
         shutil.copyfile(testing, stage / 'TESTING.md')
+    signing_notes = (
+        'The embedded macOS helper is Developer ID signed and notarized by Apple.\n'
+        'This ZIP cannot carry a stapled ticket; first-run verification may need internet.\n'
+        if notarized else
+        'This development build is not notarized or publisher-signed. macOS may\n'
+        'require approving the downloaded helper in Privacy & Security.\n'
+        'For a trusted build, TESTING.md documents a manual per-helper xattr fix.\n'
+    )
     (stage / 'INSTALL.txt').write_text(
         f'Sony Pixel Shift {version} ({platform})\n\n'
         'Extract this ZIP completely, keep SonyPixelShift.lrplugin in a permanent\n'
@@ -117,9 +139,7 @@ def build_package(binary, platform, output_dir, revision, metadata, info=None):
         'use Library > Plug-in Extras > Pixel Shift: more detail (4 or 16 RAWs).\n\n'
         'No separate Rust, Python, Perl, ExifTool, or engine installation is needed.\n'
         'See TESTING.md for installation, troubleshooting, and diagnostic reporting.\n'
-        'This development build is not notarized or publisher-signed. macOS may\n'
-        'require approving the downloaded helper in Privacy & Security.\n'
-        'For a trusted build, TESTING.md documents a manual per-helper xattr fix.\n'
+        + signing_notes +
         'The plugin never removes quarantine automatically.\n'
         'The camera profile and motion correction remain experimental. Output is\n'
         'linear DNG by default; TIFF remains available through the CLI.\n'
@@ -158,9 +178,13 @@ def main():
     parser.add_argument('--output-dir', type=Path, default=ROOT / 'dist')
     parser.add_argument('--revision', required=True)
     parser.add_argument('--metadata', type=Path, help='Previously captured cargo metadata JSON')
+    parser.add_argument('--macos-signing', choices=['adhoc', 'developer-id'], default='adhoc')
+    parser.add_argument('--notarization-receipt', type=Path)
     args = parser.parse_args()
     metadata = json.loads(args.metadata.read_text(encoding='utf-8')) if args.metadata else cargo_metadata()
-    print(build_package(args.binary, args.platform, args.output_dir, args.revision, metadata))
+    receipt = json.loads(args.notarization_receipt.read_text()) if args.notarization_receipt else None
+    print(build_package(args.binary, args.platform, args.output_dir, args.revision, metadata,
+                        macos_signing=args.macos_signing, notarization_receipt=receipt))
 
 
 if __name__ == '__main__':

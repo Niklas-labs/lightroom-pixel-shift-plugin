@@ -21,15 +21,17 @@ improved subpixel motion correction remain separate checks.
    old `.lrplugin` folder, then reopen Lightroom. In Plug-in Manager verify the
    plugin's installed path; remove/re-add that folder if menu/module registration
    remains stale. Avoid merging individual files from different builds.
-5. These CI development binaries are not publisher-signed/notarized. If macOS
+5. Default CI development binaries are not publisher-signed/notarized. OpenBao-enabled
+   signed builds identify their status in INSTALL.txt and the plugin manifest. If macOS
    blocks the helper, approve that specific downloaded application through
    **System Settings → Privacy & Security**, then retry the operation. The exact
    prompt depends on your OS security policy.
 
 ## macOS execution
 
-The current development helper is ad-hoc signed, not Developer ID signed or
-notarized. First try **System Settings → Privacy & Security → Open Anyway** after
+Development helpers are ad-hoc signed, not Developer ID signed or notarized.
+For signed builds, see [OpenBao setup](openbao-signing.md); test downloads without
+removing quarantine first. First try **System Settings → Privacy & Security → Open Anyway** after
 macOS blocks that specific helper, then retry in Lightroom.
 
 For a downloaded build you trust, a manual fallback is to remove quarantine from
