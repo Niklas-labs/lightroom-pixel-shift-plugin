@@ -12,7 +12,13 @@ function scope:setPortionComplete(done,total) assert(done >= 0 and total > 0) en
 function scope:isDone() return self.ended end
 function scope:done() self.ended=true end
 local tasks = {startAsyncTask=function(fn) queued[#queued+1]=fn end}
-local sdk = {LrTasks=tasks,LrProgressScope=function() return scope end}
+-- SDK namespaces are explicit: unknown imports must fail like Lightroom.
+-- Object types such as LrObservableTable are not importable namespaces.
+local sdk = {
+    LrApplication={}, LrDialogs={}, LrFileUtils={}, LrFunctionContext={},
+    LrPathUtils={}, LrPrefs={}, LrView={}, LrBinding={},
+    LrTasks=tasks, LrProgressScope=function() return scope end,
+}
 local base = {assert=assert,error=error,ipairs=ipairs,pairs=pairs,type=type,
     tonumber=tonumber,tostring=tostring,select=select,unpack=unpack,
     string=string,table=table,math=math,io=io,WIN_ENV=false,_PLUGIN={path=root}}
@@ -26,8 +32,7 @@ local function loadToolkit(name)
     for key,value in pairs(base) do env[key]=value end
     env.require=toolkitRequire
     env.import=function(key)
-        if not sdk[key] then sdk[key]={} end
-        return sdk[key]
+        return assert(sdk[key], 'Unknown Lightroom SDK namespace: ' .. tostring(key))
     end
     setfenv(chunk,env)
     return chunk()

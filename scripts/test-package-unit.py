@@ -71,6 +71,14 @@ class PackagingTests(unittest.TestCase):
         command = [os.environ['PIXELSHIFT_TEST_LUA'], str(ROOT / 'scripts/test-plugin-load.lua'), str(plugin)]
         result = subprocess.run(command, cwd=self.root, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        # Invalid SDK imports must fail even when every packaged Lua file exists.
+        workflow = plugin / 'Workflow.lua'
+        original = workflow.read_text(encoding='utf-8')
+        workflow.write_text("local unsupported = import 'LrObservableTable'\n" + original, encoding='utf-8')
+        unknown = subprocess.run(command, cwd=self.root, capture_output=True, text=True)
+        self.assertNotEqual(unknown.returncode, 0)
+        self.assertIn('Unknown Lightroom SDK namespace: LrObservableTable', unknown.stderr)
+        workflow.write_text(original, encoding='utf-8')
         # A missing dependency must fail this gate, as it would in Lightroom.
         (plugin / 'PixelShiftProgress.lua').unlink()
         missing = subprocess.run(command, cwd=self.root, capture_output=True, text=True)

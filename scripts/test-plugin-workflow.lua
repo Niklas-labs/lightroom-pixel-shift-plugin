@@ -106,7 +106,10 @@ local ok, problem = pcall(function()
                 end
                 return scope
             end,
-            LrObservableTable={makePropertyTable=function() return {} end},
+            LrBinding={makePropertyTable=function(context)
+                assert(state.context and context == state.contextObject, "Property table needs the active function context")
+                return {}
+            end},
             LrView={bind=function(key) return key end,osFactory=function() return {control_spacing=function() return 8 end,static_text=function(_, t) return t end,row=function(_,t) return t end,popup_menu=function(_,t) return t end,column=function(_, t) return t end} end},
             LrDialogs={presentModalDialog=function(options)
                 state.options = options

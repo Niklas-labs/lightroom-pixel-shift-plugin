@@ -128,3 +128,10 @@ region seams. CLI and extracted-package tests cover scratch selection, identical
 DNG output, cleanup, failure after ingestion and invalid options. Float fixtures
 remain float32 in scratch; only native integer tests prove packing. Real ARW
 peak memory/speed and Lightroom RAM/disk comparisons remain manual gates.
+
+SDK namespace regression: the extracted-package loader rejects unknown imports
+instead of inventing empty modules. An injected `LrObservableTable` import must
+fail; memory-dialog property tables use `LrBinding.makePropertyTable(context)`.
+Workflow scenarios also require the active function context for that factory.
+These checks cover the namespace contract; real Lightroom host testing remains
+necessary for the full SDK behavior.

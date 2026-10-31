@@ -6,7 +6,7 @@ local LrPathUtils = import 'LrPathUtils'
 local LrTasks = import 'LrTasks'
 local LrPrefs = import 'LrPrefs'
 local LrView = import 'LrView'
-local LrObservableTable = import 'LrObservableTable'
+local LrBinding = import 'LrBinding'
 local LrProgressScope = import 'LrProgressScope'
 local Protocol = require 'Protocol'
 local Engine = require 'Engine'
@@ -54,7 +54,7 @@ function M.start(denoise)
                 local output = Output.path(paths, denoise, LrPathUtils, LrFileUtils.chooseUniqueFileName)
                 local summary = Labels.summary(denoise, count)
                 local view = LrView.osFactory()
-                local settings = LrObservableTable.makePropertyTable(context)
+                local settings = LrBinding.makePropertyTable(context)
                 settings.sourceStorage = preferences.sourceStorage == 'disk' and 'disk' or 'ram'
                 local choice = LrDialogs.presentModalDialog {
                     title = summary.title,
