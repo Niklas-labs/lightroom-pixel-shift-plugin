@@ -74,14 +74,14 @@ jobs:
           lipo -create target/aarch64-apple-darwin/release/sony-pixelshift target/x86_64-apple-darwin/release/sony-pixelshift -output target/universal/sony-pixelshift
           lipo target/universal/sony-pixelshift -verify_arch arm64 x86_64
           otool -L target/universal/sony-pixelshift
-      - name: Fetch signing credentials from OpenBao using GitHub OIDC
+      - name: Fetch signing and notarization credentials from OpenBao using GitHub OIDC
         run: python scripts/ci_signing.py fetch
       - name: Developer ID sign universal helper
         run: python scripts/ci_signing.py sign --binary target/universal/sony-pixelshift
-      - name: Package Developer ID signed plugin
-        run: python scripts/package-plugin.py --binary target/universal/sony-pixelshift --platform macos-universal --revision '${{ github.sha }}' --macos-signing developer-id
-      - name: Report notarization status
-        run: echo 'Developer ID signing enabled. Apple notarization is not configured; this artifact is signed but not notarized.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Require Apple notarization acceptance
+        run: python scripts/ci_signing.py notarize --binary target/universal/sony-pixelshift --receipt "$RUNNER_TEMP/pixelshift-signing/notarization-receipt.json"
+      - name: Package signed and notarized plugin
+        run: python scripts/package-plugin.py --binary target/universal/sony-pixelshift --platform macos-universal --revision '${{ github.sha }}' --macos-signing developer-id --notarization-receipt "$RUNNER_TEMP/pixelshift-signing/notarization-receipt.json"
       - name: Remove temporary signing credentials and keychain
         if: always()
         run: python scripts/ci_signing.py cleanup

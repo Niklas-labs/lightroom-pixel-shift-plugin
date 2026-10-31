@@ -223,20 +223,22 @@ dispatch only after profiling, while keeping distributed binaries compatible.
   with Lightroom closed. The screenshot alone does not identify the root cause.
 - [ ] Expose validated output and resource preferences in the plugin UI and
   version the engine/job protocol accordingly.
-- [ ] Sign the macOS helper with a Developer ID Application certificate, hardened
-  runtime and a secure timestamp. Current ad-hoc signing is not publisher trust.
+- [ ] Validate the first live Developer ID signed helper, including hardened
+  runtime, a secure timestamp and the correct Apple team.
 - [ ] Notarize the macOS distribution with `notarytool`; choose a supported DMG
   or PKG container and staple its ticket. Standalone Mach-O binaries and ZIPs
   cannot themselves carry a stapled ticket. Retain ZIP development artifacts.
-- [x] Implement opt-in OpenBao KV v2 credential retrieval using GitHub OIDC, with
+- [x] Implement OpenBao KV v2 credential retrieval using GitHub OIDC, with
   exact repository/branch/workflow/environment claims, short-lived sessions and
   ephemeral keychain cleanup. No Apple credentials in GitHub secrets.
 - [x] Enable Developer ID signing from the personal P12 record via GitHub OIDC.
   Distinguish signed-only output from notarized output in package metadata.
 - [x] Require accepted matching receipts before claiming notarization; retain
   explicit development/signing/notarization labels.
-- [ ] Verify the first live signed artifact; authorize separate Apple notarization
-  credentials, enable notarization, and test a normal browser download with
+- [x] Retrieve the separate notarization key and issuer custom metadata through
+  exact Bao data access; require Apple acceptance before macOS publication.
+- [ ] Merge/apply the updated Bao role, verify the first live notarized artifact,
+  and test a normal browser download with
   quarantine intact on a fresh macOS account (Intel and Apple Silicon). Installation
   should not require `xattr` or a global Gatekeeper change.
 - [ ] Add tagged release assets and Windows publisher signing; preserve native

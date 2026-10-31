@@ -25,15 +25,15 @@ ExifTool, Rust toolchain or developer PATH is required at runtime.
 macOS binaries are assembled with `lipo` and Developer ID signed using the personal
 P12 record fetched from OpenBao via GitHub OIDC. Signing is enabled for every macOS
 packaging job; failures stop publication. See [signing setup](openbao-signing.md).
-The record supplies signing only, so current macOS artifacts are **signed but not
-notarized**. Manifest and installation notes report those states separately.
-Signing alone does not resolve normal download-time Gatekeeper rejection.
+A separate Bao record supplies the notarization private key and issuer custom
+metadata. Apple notarization acceptance is mandatory before publication, and the
+manifest/installation notes record it alongside Developer ID signing. The live
+Bao role must have the exact two record permissions described in the setup guide.
 
 Windows development binaries remain unsigned. Local ad-hoc macOS builds remain
 available for development. For those or non-notarized artifacts, see
-[macOS execution](lightroom-testing.md#macos-execution). Automatic notarization
-needs separately authorized Apple API credentials; stapled offline containers
-and normal browser-download acceptance remain follow-ups. The plugin never
+[macOS execution](lightroom-testing.md#macos-execution). Stapled offline containers and
+normal browser-download acceptance remain follow-ups. The plugin never
 changes quarantine automatically.
 
 CI uploads with `actions/upload-artifact` v7 and `archive: false`, preserving

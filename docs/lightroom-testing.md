@@ -21,7 +21,8 @@ improved subpixel motion correction remain separate checks.
    old `.lrplugin` folder, then reopen Lightroom. In Plug-in Manager verify the
    plugin's installed path; remove/re-add that folder if menu/module registration
    remains stale. Avoid merging individual files from different builds.
-5. Current macOS CI binaries are Developer ID signed but not notarized.
+5. New macOS CI artifacts require Developer ID signing and Apple notarization;
+   older artifacts may be signed-only or development builds.
    INSTALL.txt and the plugin manifest report both states separately. If macOS
    blocks the helper, approve that specific downloaded application through
    **System Settings → Privacy & Security**, then retry the operation. The exact

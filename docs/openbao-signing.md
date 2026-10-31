@@ -1,12 +1,13 @@
 # macOS signing through OpenBao and GitHub OIDC
 
-The macOS packaging job always Developer ID signs its universal helper. It uses
+The macOS packaging job Developer ID signs its universal helper and requires
+Apple notarization acceptance before publishing. It uses
 GitHub OIDC to retrieve the existing personal signing identity from Kalix Bao;
 there are no Apple credentials or long-lived Bao tokens in GitHub secrets.
 The private key temporarily enters an isolated runner keychain for `codesign`.
 This is secret retrieval, not remote/HSM signing.
 
-## Authentication and signing record
+## Authentication and credential records
 
 The [Kalix Bao configuration](https://gitlab.com/NiklasRosenstein/config/-/tree/main/app.rosenstein.cluster.kalix/bao)
 is authoritative. `auth-github-actions.tf` owns issuer trust at
@@ -14,6 +15,10 @@ is authoritative. `auth-github-actions.tf` owns issuer trust at
 `lightroom-pixel-shift-macos-signing`; it binds this repository's owner/repository
 IDs, main branch, packaging workflow, push/manual events and `macos-signing`
 GitHub environment. Tokens expire within five minutes and have no default policy.
+The policy allows only the two exact records below and self-token revocation.
+[MR !343](https://gitlab.com/NiklasRosenstein/config/-/merge_requests/343) adds the
+notarization permission and environment-claim binding. Its normal merge/apply
+is required before the live workflow can succeed.
 
 The client reads this KV v2 record:
 
@@ -27,6 +32,19 @@ The P12 must contain the signing certificate and matching private key. CI derive
 codesign's SHA-1 identity from the certificate whose DER SHA-256 matches the
 record path, then checks that it is a valid Developer ID Application identity
 for team `2TF792U5Y6`. Display names cannot select a different certificate.
+
+The separate notarization record is:
+
+```text
+personal/apple/notarization/2TF792U5Y6/22XYSDVB68
+```
+
+Its secret-data field is **private_key_pem**. The public **issuer_id** is custom
+metadata, returned at `data.metadata.custom_metadata.issuer_id` by the same
+KV v2 data read. Key ID **22XYSDVB68** comes from the record path. No metadata
+endpoint or listing permission is required. CI validates the issuer UUID and
+PKCS#8 PEM, then writes only the inputs needed by Apple's `notarytool` to a
+separate private file. The P12 record is not modified or duplicated.
 
 The existing secret does not need re-uploading or conversion. For a future local
 P12 export, `scripts/prepare-signing-secret.py` can generate the two-field JSON
@@ -42,8 +60,8 @@ merges into that workflow.
 ## Runner lifecycle
 
 Only the macOS packaging job gets `id-token: write`. It requests the Kalix
-audience, reads the single authorized record and immediately revokes its Bao
-token, including on validation errors. Files stay under a mode-0700 RUNNER_TEMP
+audience, reads the two authorized records and immediately revokes its Bao
+token, including when either read or validation fails. Files stay under a mode-0700 RUNNER_TEMP
 directory, outside GITHUB_ENV, step outputs, build caches and distribution ZIPs.
 
 The keychain imports the P12 for Apple signing tools, signs with hardened runtime
@@ -55,23 +73,20 @@ job; there is no ad-hoc fallback. No opt-in repository variable is required.
 Windows artifacts remain unsigned. Local assembly still supports development
 packages and explicitly records their different status.
 
-## Notarization remains separate
+## Notarization and publication
 
-The signing record contains no App Store Connect API credentials. CI therefore
-publishes a **Developer ID signed but not notarized** helper, reflected in
-`manifest.json`, INSTALL.txt and the job summary. Signing alone does not remove
-normal Gatekeeper rejection after a browser download.
+After signing, CI submits a temporary ZIP containing the signed universal helper
+to `notarytool`, with Key ID 22XYSDVB68 and the issuer UUID from Bao metadata.
+Apple status **Accepted** is mandatory. An invalid submission, API failure or
+timeout stops publication; CI does not fall back to signed-only or ad-hoc output.
+The receipt is bound to the helper SHA-256 and kept in the private RUNNER_TEMP
+directory, outside restored Rust caches. The final plugin preserves that exact
+signed helper, and its manifest/INSTALL.txt report notarization acceptance.
 
-Apple notarization requires a separately authorized Team API key (`.p8`), key ID
-and issuer ID. Do not add unrelated credentials to the existing signing record
-or broaden its policy. The `notarize` CLI helper accepts a separate private
-`notary-credentials.json` with `notary_key_p8`, `notary_key_id` and
-`notary_issuer_id`; it is not called by current CI. A future Bao policy/fetch path
-must supply that record before enabling automatic notarization. It requires
-Apple status **Accepted** and binds the receipt to the helper SHA-256. The package
-assembler marks notarization true only for an accepted matching receipt.
+Local assembly can still make explicitly labelled development or signed-only
+packages. They cannot claim notarization without an accepted matching receipt.
 
-ZIPs and standalone Mach-O helpers cannot carry stapled tickets. A stapled DMG/PKG
-remains a follow-up for offline verification. After notarization is configured,
-test normal browser downloads with quarantine intact on Apple Silicon and Intel.
-The plugin never removes quarantine itself.
+ZIPs and standalone Mach-O helpers cannot carry stapled tickets. Notarization
+registers the helper for online Gatekeeper lookup; a stapled DMG/PKG remains a
+follow-up for offline verification. Test normal browser downloads with quarantine
+intact on Apple Silicon and Intel. The plugin never removes quarantine itself.

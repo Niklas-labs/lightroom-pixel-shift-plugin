@@ -31,6 +31,11 @@ def material():
     return {'p12_base64': base64.b64encode(b'fixture p12').decode(), 'p12_password': 'fixture password'}
 
 
+def notary_response():
+    return {'data':{'data':{'private_key_pem':'-----BEGIN PRIVATE KEY-----\nfixture\n-----END PRIVATE KEY-----\n'},
+                    'metadata':{'custom_metadata':{'issuer_id':'00000000-0000-0000-0000-000000000001'}}}}
+
+
 class SigningTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -44,7 +49,7 @@ class SigningTests(unittest.TestCase):
         self.addCleanup(patch.stopall)
         patch.object(signing, 'CERTIFICATE_SHA256', hashlib.sha256(CERT_DER).hexdigest()).start()
 
-    def fetch(self, fail_read=False, fail_revoke=False):
+    def fetch(self, fail_read=False, fail_revoke=False, fail_notary=False, missing_issuer=False):
         def transport(url, headers, payload=None):
             self.calls.append((url, headers, payload))
             if (parse.urlsplit(url).hostname or '').endswith('.actions.githubusercontent.com'):
@@ -57,16 +62,26 @@ class SigningTests(unittest.TestCase):
                 return {}
             if fail_read:
                 raise signing.SigningError('fixture read failed')
+            if url.endswith(signing.NOTARY_SECRET_PATH):
+                if fail_notary: raise signing.SigningError('fixture notary read failed')
+                response=notary_response()
+                if missing_issuer: del response['data']['metadata']['custom_metadata']['issuer_id']
+                return response
             return {'data': {'data': material()}}
         with redirect_stdout(io.StringIO()):
             signing.fetch_credentials(self.env, transport, lambda _: None)
 
-    def test_oidc_audience_read_one_path_revoke_and_private_files(self):
+    def test_oidc_reads_two_exact_records_revokes_and_protects_files(self):
         self.fetch()
         self.assertEqual(parse.parse_qs(parse.urlsplit(self.calls[0][0]).query)['audience'], [signing.BAO_ADDRESS])
         self.assertEqual(self.calls[1][0], signing.BAO_ADDRESS + '/v1/auth/token.actions.githubusercontent.com/login')
         self.assertEqual(self.calls[1][2], {'role': 'lightroom-pixel-shift-macos-signing', 'jwt': 'fixture-jwt'})
         self.assertEqual(self.calls[2][0], signing.BAO_ADDRESS + '/v1/personal/data/apple/signing-identities/2TF792U5Y6/developer-id-application/01162bea66636d78e09580172b23cf922d71fe04e2fc8879b827dc98c6091960')
+        self.assertEqual(self.calls[3][0], signing.BAO_ADDRESS+'/v1/personal/data/apple/notarization/2TF792U5Y6/22XYSDVB68')
+        self.assertEqual(len(self.calls),5)
+        notary_path=self.directory/'notary-credentials.json'
+        self.assertEqual(json.loads(notary_path.read_text()),signing.notary_material_from_response(notary_response()))
+        self.assertEqual(notary_path.stat().st_mode & 0o777,0o600)
         self.assertTrue(self.calls[-1][0].endswith('/revoke-self'))
         self.assertEqual(json.loads((self.directory / 'credentials.json').read_text()), material())
         self.assertEqual(self.directory.stat().st_mode & 0o777, 0o700)
@@ -76,7 +91,7 @@ class SigningTests(unittest.TestCase):
         self.assertFalse(self.directory.exists())
 
     def test_read_failure_revokes_and_revoke_failure_stops_signing(self):
-        for kwargs in ({'fail_read': True}, {'fail_revoke': True}):
+        for kwargs in ({'fail_read': True}, {'fail_revoke': True}, {'fail_notary':True}, {'missing_issuer':True}):
             with self.assertRaises(signing.SigningError):
                 self.fetch(**kwargs)
             self.assertTrue(self.calls[-1][0].endswith('/revoke-self'))
@@ -157,11 +172,11 @@ class SigningTests(unittest.TestCase):
 
     def test_apple_acceptance_required_receipt_is_bound_to_binary(self):
         binary = self.setup_binary()
+        (self.directory/'notary-credentials.json').unlink()
         with self.assertRaisesRegex(signing.SigningError,'Separate Apple notarization'):
             signing.notarize(binary,self.directory,lambda *a,**kw: self.fail('Must not invoke Apple without credentials'))
-        signing.private_write(self.directory/'notary-credentials.json',json.dumps({
-            'notary_key_p8':'-----BEGIN PRIVATE KEY-----\nfixture\n-----END PRIVATE KEY-----\n',
-            'notary_key_id':'ABC123DE45','notary_issuer_id':'00000000-0000-0000-0000-000000000001'}).encode())
+        signing.private_write(self.directory/'notary-credentials.json',json.dumps(
+            signing.notary_material_from_response(notary_response())).encode())
         for status in ('Invalid','In Progress','Accepted'):
             def runner(command,label,**kwargs):
                 self.assertEqual(command[0:3], ['xcrun','notarytool','submit'])
@@ -181,6 +196,17 @@ class SigningTests(unittest.TestCase):
                 packager.build_package(binary,'macos-universal',self.root/'dist','a'*40,{}, {},
                                        macos_signing='developer-id',notarization_receipt=receipt)
 
+    def test_notary_issuer_must_come_from_custom_metadata(self):
+        response=notary_response()
+        response['data']['data']['issuer_id']='00000000-0000-0000-0000-000000000002'
+        self.assertEqual(signing.notary_material_from_response(response)['notary_issuer_id'],
+                         '00000000-0000-0000-0000-000000000001')
+        for bad in [None,'','not-a-uuid']:
+            response['data']['metadata']['custom_metadata']['issuer_id']=bad
+            with self.assertRaises(signing.SigningError): signing.notary_material_from_response(response)
+        response=notary_response();del response['data']['metadata']
+        with self.assertRaises(signing.SigningError): signing.notary_material_from_response(response)
+
     def test_diagnostics_do_not_echo_error_values_or_tokens(self):
         detail=signing.safe_endpoint_detail(json.dumps({'errors':['claim "event_name" mismatched secret-value']}))
         self.assertIn('event_name',detail)
@@ -189,7 +215,7 @@ class SigningTests(unittest.TestCase):
         self.assertEqual(signing.claim_mismatches('opaque-private-token'),'unavailable')
         jwt='header.'+base64.urlsafe_b64encode(json.dumps({'sub':'private-value'}).encode()).decode()+'.signature'
         self.assertNotIn('private-value',signing.claim_mismatches(jwt))
-        self.assertIn('sub',signing.claim_mismatches(jwt))
+        self.assertIn('environment',signing.claim_mismatches(jwt))
 
     def test_mask_escapes_workflow_commands_and_does_not_print_locally(self):
         output=io.StringIO()
@@ -210,7 +236,15 @@ class SigningTests(unittest.TestCase):
                 signed=[s for s in job['steps'] if 'run' in s and 'ci_signing.py fetch' in s['run']]
                 self.assertNotIn('if',signed[0])
                 self.assertFalse(any('ad-hoc' in s.get('name','') for s in job['steps']))
-                self.assertFalse(any('ci_signing.py notarize' in s.get('run','') for s in job['steps']))
+                self.assertEqual(len([s for s in job['steps'] if 'ci_signing.py notarize' in s.get('run','')]),1)
+                steps=job['steps']
+                notary_index=next(i for i,s in enumerate(steps) if 'ci_signing.py notarize' in s.get('run',''))
+                package_index=next(i for i,s in enumerate(steps) if 'package-plugin.py' in s.get('run',''))
+                self.assertLess(notary_index,package_index)
+                self.assertNotIn('if',steps[notary_index])
+                self.assertNotIn('if',steps[package_index])
+                self.assertIn('--notarization-receipt',steps[package_index]['run'])
+
                 self.assertEqual(job.get('env',{}).get('MACOS_SIGNING_ENABLED'),None)
                 cleanup=[s for s in job['steps'] if 'run' in s and 'ci_signing.py cleanup' in s['run']]
                 self.assertEqual(cleanup[0]['if'],'always()')

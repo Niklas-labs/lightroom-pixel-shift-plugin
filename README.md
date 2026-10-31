@@ -13,9 +13,10 @@ Download the latest successful **Package Lightroom Plugin** workflow artifact:
 and add that directory using **File → Plug-in Manager → Add**.
 
 The package embeds the matching Rust executable. No separate engine selection,
-Rust, Python, Perl or ExifTool installation is required. CI development builds are
-Developer ID signed on macOS but not yet notarized; macOS may require approving the specific helper
-in Privacy & Security. See [installation and testing](docs/lightroom-testing.md)
+Rust, Python, Perl or ExifTool installation is required. The macOS publishing
+workflow requires Developer ID signing and Apple notarization acceptance. Older
+or local development artifacts may still require approving the specific helper
+in Privacy & Security; check INSTALL.txt and the package manifest. See [installation and testing](docs/lightroom-testing.md)
 and [CI packaging](docs/packaging.md).
 
 Select exactly four or sixteen original a7CR Pixel Shift ARWs, then choose
@@ -157,5 +158,6 @@ Read [dependency evaluation](docs/dependencies.md), [architecture](docs/architec
 and [validation requirements](docs/validation.md) before calling a profile stable.
 
 macOS CI uses Developer ID signing through [OpenBao and GitHub OIDC](docs/openbao-signing.md).
-The personal P12 record supplies signing only; separate Apple notarization
-credentials are still required to resolve download-time Gatekeeper rejection.
+It reads separate P12 and notarization records and requires Apple acceptance
+before publishing macOS artifacts. Online Gatekeeper verification remains part
+of normal browser-download testing.

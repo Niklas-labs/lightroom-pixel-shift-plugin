@@ -28,6 +28,8 @@ SECRET_PATH = 'personal/data/apple/signing-identities/2TF792U5Y6/developer-id-ap
 CERTIFICATE_SHA256 = SECRET_PATH.rsplit('/', 1)[1]
 TEAM_ID = '2TF792U5Y6'
 FIELDS = {'p12_base64', 'p12_password'}
+NOTARY_SECRET_PATH = 'personal/data/apple/notarization/2TF792U5Y6/22XYSDVB68'
+NOTARY_KEY_ID = NOTARY_SECRET_PATH.rsplit('/', 1)[1]
 
 
 class SigningError(Exception):
@@ -57,7 +59,7 @@ def safe_endpoint_detail(raw):
     except (ValueError, AttributeError, TypeError):
         return 'response withheld'
     fields = {'repository', 'repository_id', 'repository_owner_id', 'ref', 'ref_type',
-              'event_name', 'workflow_ref', 'sub', 'iss', 'aud'}
+              'event_name', 'workflow_ref', 'environment', 'sub', 'iss', 'aud'}
     claims = [name for name in re.findall(r'claim [\"\']([a-z_]+)[\"\']', message) if name in fields]
     if claims:
         return 'JWT claim validation failed: ' + ', '.join(sorted(set(claims)))
@@ -76,7 +78,7 @@ def claim_mismatches(jwt):
         payload = jwt.split('.')[1]
         claims = json.loads(base64.urlsafe_b64decode(payload + '='*((-len(payload))%4)))
         expected = {'iss':'https://token.actions.githubusercontent.com',
-                    'sub':'repo:Niklas-labs/lightroom-pixel-shift-plugin:environment:macos-signing',
+                    'environment':'macos-signing',
                     'repository':'Niklas-labs/lightroom-pixel-shift-plugin','repository_id':'1438976219',
                     'repository_owner_id':'343997774','ref':'refs/heads/main','ref_type':'branch',
                     'workflow_ref':'Niklas-labs/lightroom-pixel-shift-plugin/.github/workflows/package.yml@refs/heads/main'}
@@ -129,11 +131,7 @@ def validate_material(value):
     return value
 
 
-def load_notary_material(directory):
-    path = directory / 'notary-credentials.json'
-    if not path.is_file():
-        raise SigningError('Separate Apple notarization credentials are not configured')
-    value = json.loads(path.read_text())
+def validate_notary_material(value):
     fields = {'notary_key_p8', 'notary_key_id', 'notary_issuer_id'}
     if not isinstance(value, dict) or set(value) != fields or any(not isinstance(v,str) or not v or '\0' in v for v in value.values()):
         raise SigningError('Invalid separate notarization credentials')
@@ -144,6 +142,27 @@ def load_notary_material(directory):
     pem = value['notary_key_p8'].strip()
     if not re.fullmatch(r'[A-Z0-9]{10}', value['notary_key_id']) or not pem.startswith('-----BEGIN PRIVATE KEY-----') or not pem.endswith('-----END PRIVATE KEY-----'):
         raise SigningError('Invalid notarization API key')
+    if value['notary_key_id'] != NOTARY_KEY_ID:
+        raise SigningError('Notarization API key ID does not match the authorized record')
+    return value
+
+
+def notary_material_from_response(response):
+    try:
+        envelope = response['data']
+        private_key = envelope['data']['private_key_pem']
+        issuer_id = envelope['metadata']['custom_metadata']['issuer_id']
+    except (KeyError, TypeError):
+        raise SigningError('Notarization record requires private_key_pem and issuer_id custom metadata') from None
+    return validate_notary_material({'notary_key_p8':private_key, 'notary_key_id':NOTARY_KEY_ID,
+                                    'notary_issuer_id':issuer_id})
+
+
+def load_notary_material(directory):
+    path = directory / 'notary-credentials.json'
+    if not path.is_file():
+        raise SigningError('Separate Apple notarization credentials are not configured')
+    value = validate_notary_material(json.loads(path.read_text()))
     for field in value.values():
         mask(field)
     return value
@@ -213,10 +232,18 @@ def fetch_credentials(env, transport=request_json, masker=mask):
             for value in material.values():
                 masker(value)
             private_write(directory / 'credentials.json', json.dumps(material).encode())
+            try:
+                response = transport(BAO_ADDRESS + '/v1/' + NOTARY_SECRET_PATH, {'X-Vault-Token': token})
+            except SigningError as exc:
+                raise SigningError('OpenBao notarization record read failed: ' + str(exc)) from None
+            notary = notary_material_from_response(response)
+            for value in notary.values():
+                masker(value)
+            private_write(directory / 'notary-credentials.json', json.dumps(notary).encode())
         finally:
             # No token is persisted in files, GITHUB_ENV, outputs, artifacts or caches.
             transport(BAO_ADDRESS + '/v1/auth/token/revoke-self', {'X-Vault-Token': token}, {})
-        print('Fetched signing material; OpenBao session revoked.')
+        print('Fetched signing and notarization records; OpenBao session revoked.')
     except BaseException:
         shutil.rmtree(directory)
         raise
