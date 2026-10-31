@@ -13,6 +13,29 @@ invalid buffers/models/CFA/sequence/options, CLI ordering, TIFF decode/bit depth
 ICC presence, source camera/lens/exposure EXIF roundtrips, duplicate paths, version rejection and no-clobber publication.
 Synthetic tests do not validate Sony decoder accuracy or real metadata.
 
+Absolute brightness regression tests now cover the native-u16 packed source →
+normalization → streamed merge → float DNG path. Run
+`cargo test -p pixelshift-io --test radiometry -- --nocapture` for the summary.
+The 44 analytic cases span 4-shot, 16-shot and burst denoise; RAM/disk stores;
+phase-dependent black/white levels; below-black, dark gray, midgray, bright gray
+and above-white fields; per-channel spatial gradients; forced reference fallback;
+and balanced-noise denoising. Expected values are derived from an independent
+acquisition table and analytic scene, not another implementation of the merge.
+Every output sample must agree within 1e-6 and positive channel means within
+1e-6 EV. Odd seven-row strips exercise source-window CFA phase handling.
+
+`scripts/test-dng.py --engine target/debug/sony-pixelshift` additionally checks
+12 CLI spatial-gradient cases with tifffile, independently reading both lossless
+Deflate and uncompressed DNGs in all modes and both storage settings. Initial
+results: zero maximum sample error and zero mean-channel EV bias in all 56 cases.
+These are exactly representable synthetic inputs, not a claim about noisy camera
+captures. Native tests supply known sensor codes/levels directly, so they cannot
+validate ARW decoding, real black/white metadata or Sony/Adobe calibration.
+The reported slight darkening in Lightroom remains unresolved. Next compare
+real ARW decoded values/levels with an independent decoder and compare source
+and merged rendering under controlled white balance, profiles and baseline
+exposure. Do not infer equal rendering from matching slider values alone.
+
 ## Required private capture corpus before claiming a7CR support is stable
 
 Keep originals outside git. For each capture record SHA-256, firmware, lens,

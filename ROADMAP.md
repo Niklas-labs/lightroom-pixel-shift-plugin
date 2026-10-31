@@ -143,6 +143,10 @@ real TIFF testing has exposed Adobe profile and RAW editing limitations.
 - [ ] Validate RAW lens-profile matching and Sony built-in corrections, including
   distortion, vignetting and CA. Recompute correction coordinates for output crop
   and sixteen-shot scale; never blindly copy source geometry/opcodes.
+- [x] Add absolute synthetic brightness checks through native packed-u16
+  normalization, merge and DNG output, with independent compressed-DNG reads.
+  All 56 analytic cases preserve samples and mean channel brightness exactly;
+  this does not validate real ARW levels or Lightroom calibration/rendering.
 - [ ] Compare merged DNG and source ARW under matched WB, exposure and Adobe
   profile. Check neutral patches, chart colors, highlight recovery and tone.
   Initial real four-shot feedback reports a slightly darker DNG and softer detail

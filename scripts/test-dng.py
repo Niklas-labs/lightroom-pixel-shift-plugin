@@ -128,6 +128,53 @@ def check(engine):
             assert 'ColorMatrix2' not in raw.tags and 'CalibrationIlluminant2' not in raw.tags
             np.testing.assert_allclose(raw.asarray(),np.broadcast_to(expected,raw.shape),rtol=0,atol=1e-6)
         print('single-D65 fallback: calibration and unmodified sample checks passed')
+        check_gradient_photometry(engine, root, job)
+
+
+def check_gradient_photometry(engine, root, job):
+    """Independent spatial oracle through CLI + lossless DNG, not the preview."""
+    base = np.array([0.015625, 0.1875, 0.75], dtype=np.float32)
+    dx = np.array([1, 2, 3], dtype=np.float32) / 2048
+    dy = np.array([3, 2, 1], dtype=np.float32) / 4096
+    worst_error = worst_ev = 0.0
+    for mode in ('four', 'sixteen', 'denoise'):
+        names = job['inputs'] if mode == 'sixteen' else job['inputs'][:4]
+        for index, name in enumerate(names):
+            path = root / name
+            frame = json.loads(path.read_text())
+            frame.pop('source_crop', None)
+            frame['color']['white_balance'] = [2, 1, 1.5]
+            width, height = frame['frame']['width'], frame['frame']['height']
+            sx, sy = [(1, 0), (1, 1), (0, 1), (0, 0)][index % 4]
+            hx, hy = [(0.5, 0), (0, 0), (0.5, 0.5), (0, 0.5)][index // 4] if mode == 'sixteen' else (0, 0)
+            sx, sy = (0, 0) if mode == 'denoise' else (sx + hx, sy + hy)
+            frame['frame']['pixels'] = [
+                float(base[c] + dx[c]*(x+sx) + dy[c]*(y+sy))
+                for y in range(height) for x in range(width)
+                for c in [[0, 1, 1, 2][(y % 2)*2+x % 2]]
+            ]
+            path.write_text(json.dumps(frame))
+        scale = 2 if mode == 'sixteen' else 1
+        y, x = np.mgrid[:(height-8)*scale, :(width-8)*scale]
+        expected = base + (4+x[..., None]/scale)*dx + (4+y[..., None]/scale)*dy
+        for storage in ('ram', 'disk'):
+            for compression in ('none', 'lossless'):
+                spec = dict(job, mode=mode, inputs=names,
+                            output=f'gradient-{mode}-{storage}-{compression}.dng',
+                            source_storage=storage, compression=compression,
+                            strip_rows=7, motion_threshold=0.08, alignment_radius=0)
+                path = root / 'gradient-job.json'
+                path.write_text(json.dumps(spec))
+                subprocess.run([str(engine), 'merge', '--fixtures', '--job', str(path)], check=True, capture_output=True)
+                with tifffile.TiffFile(root / spec['output']) as dng:
+                    actual = dng.pages[0].asarray()
+                    np.testing.assert_allclose(actual, expected, rtol=0, atol=1e-6)
+                    error = float(np.max(np.abs(actual-expected)))
+                    ev = np.log2(actual.astype(np.float64).mean(axis=(0, 1))/expected.mean(axis=(0, 1)))
+                    assert np.max(np.abs(ev)) < 1e-6, ev
+                    worst_error = max(worst_error, error)
+                    worst_ev = max(worst_ev, float(np.max(np.abs(ev))))
+    print(f'12 gradient photometry cases: max sample error {worst_error:.9g}, max mean channel bias {worst_ev:.9g} EV')
 
 
 if __name__ == '__main__':
