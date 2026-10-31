@@ -31,10 +31,11 @@ results: zero maximum sample error and zero mean-channel EV bias in all 56 cases
 These are exactly representable synthetic inputs, not a claim about noisy camera
 captures. Native tests supply known sensor codes/levels directly, so they cannot
 validate ARW decoding, real black/white metadata or Sony/Adobe calibration.
-The local [Lightroom export comparison](brightness-comparison.md) has five
+The local [Lightroom export comparison](brightness-comparison.md) has seven
 regression checks (`python scripts/test-comparison.py`): known EV shifts through
 16-bit sRGB quantization, per-channel color shifts, edge/clipping exclusion,
-ICC/compression validation, and CLI report/preview generation and size rejection.
+ICC/compression validation, CLI report/preview generation and size rejection, and metadata-only DNG
+comparison with root/SubIFD inheritance and no pixel decoding.
 These run before CI packages the plugin.
 The reported slight darkening in Lightroom remains unresolved. Next compare
 real ARW decoded values/levels with an independent decoder and compare source

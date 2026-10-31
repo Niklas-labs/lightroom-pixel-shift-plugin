@@ -156,7 +156,11 @@ real TIFF testing has exposed Adobe profile and RAW editing limitations.
   both Adobe Color / As Shot / Exposure 0.00; DNG WB is 6350 K/+18 versus ARW
   5850 K/+15. Dual-illuminant A/D65 output is implemented as a calibration
   improvement, without changing WB gains, raw samples or baseline exposure;
-  its actual Lightroom rendering remains to verify.
+  its actual Lightroom rendering remains to verify. A matched numeric-WB
+  Sony ARQ/plugin export comparison measured -0.4328 EV median luminance,
+  similar center/outer differences, and unequal RGB shifts. Plugin calibration
+  tags match intended output; Adobe-reference DNG metadata comparison and real
+  RAW normalization checks remain pending. See docs/brightness-comparison.md.
 - [ ] Inherit the reference photo's lens-correction enable preference for a
   compatible merged DNG. Initial feedback required manually enabling the
   correctly preselected lens profile. Keep this separate from copying source

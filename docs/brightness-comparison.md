@@ -80,3 +80,51 @@ brightness scale. Channel-dependent differences suggest color/WB interpretation;
 edge-dependent differences can involve corrections or geometry. Neither result
 alone identifies a faulty DNG tag: real decoder levels, camera calibration,
 profiles and Adobe default rendering still require separate verification.
+
+## Compare Adobe and plugin DNG calibration without exporting TIFFs
+
+If rendered exports differ, convert **one original ARW from the same capture**
+with [Adobe DNG Converter](https://helpx.adobe.com/camera-raw/using/adobe-dng-converter.html).
+Use lossless conversion, with no resizing or lossy compression, and call the
+result `Sony-reference.dng`. This is a metadata reference, not another merge.
+It exposes Adobe's chosen DNG calibration and baseline tags, although those tags
+alone need not describe every Lightroom native ARW/ARQ rendering decision.
+
+Download the latest comparison script, then run:
+
+```sh
+uv run --with numpy==2.3.5,tifffile==2026.10.15,Pillow==12.3.0 \
+  compare-lightroom.py --metadata-only \
+  --reference-dng Sony-reference.dng \
+  --dng DSC01582-DSC01585-PixelShift.dng \
+  --out comparison-calibration
+```
+
+Replace the DNG paths with your own. Alternatively use the configured Python
+virtual environment above. Share only `comparison-calibration/report.json`.
+No TIFF exports, image decoding, or previews are needed. The script reads the
+root calibration plus the actual CFA/LinearRaw directory, including raw-image
+SubIFDs beneath an RGB preview in Adobe DNGs. The report contains only the
+calibration tag whitelist, excluding private MakerNotes, GPS and XMP.
+
+Do not expect mosaic DNG black/white levels to equal the normalized LinearRaw
+levels 0/1 numerically. Compare the normalization convention, WB ratios,
+matrices, analog balance, calibration illuminants and baseline exposure together.
+A missing baseline/profile component should be established from a known-good
+reference before modifying output metadata; a rendered EV difference by itself
+is not a camera exposure correction.
+
+### Initial a7CR report
+
+One four-shot capture, exported in Lightroom with matching numeric WB 5850/+15,
+measured median plugin-vs-Sony rendered luminance -0.4328 EV. Center -0.4314 EV
+and outer -0.4340 EV were similar. RGB medians differed: -0.7108, -0.4099 and
+-0.2841 EV. Highlights (-0.2362 EV) differed less than shadows (-0.4426 EV).
+Both exports were 9504x6336 with identical sRGB ICC profiles. This supports a
+broad rendering difference with a color component, not just edge vignetting.
+
+The plugin DNG report confirms the intended A/D65 matrices, AsShotNeutral
+[0.372228, 1, 0.645243], normalized black/white levels 0/1 and BaselineExposure
+0 EV. That confirms the metadata was written as implemented; it does not prove
+those values reproduce Adobe's native ARW/ARQ rendering. Adobe reference
+calibration and independent real-RAW normalization validation remain pending.

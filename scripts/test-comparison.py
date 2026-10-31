@@ -7,6 +7,7 @@ import json
 import subprocess
 import sys
 import unittest
+from unittest import mock
 
 import numpy as np
 import tifffile
@@ -74,6 +75,53 @@ class ComparisonTests(unittest.TestCase):
             run = subprocess.run(command, capture_output=True, text=True)
             self.assertEqual(run.returncode, 2)
             self.assertIn('dimensions differ', run.stderr)
+
+    def test_calibration_subifd_inheritance_without_decoding_pixels(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)/'reference.dng'
+            with tifffile.TiffWriter(path) as writer:
+                writer.write(np.zeros((8, 8, 3), dtype=np.uint8), photometric='rgb',
+                             metadata=None, subifds=1,
+                             extratags=[(50706, 'B', 4, (1, 4, 0, 0), False),
+                                        (50730, '2i', 1, (1, 3), False)])
+                writer.write(np.zeros((16, 16), dtype=np.uint16), photometric=32803,
+                             metadata=None, extratags=[(50717, 'I', 1, 16383, False)])
+            with mock.patch.object(tifffile.TiffPage, 'asarray', side_effect=AssertionError('pixel decode')):
+                tags = comparison.dng_metadata(path)
+            self.assertEqual(tags['WhiteLevel'], 16383)
+            self.assertEqual(tags['BaselineExposure'], (1, 3))
+            self.assertEqual(tags['PhotometricInterpretation'], 32803)
+            self.assertEqual(tags['BitsPerSample'], 16)
+            self.assertNotIn('MakerNote', tags)
+            command = [sys.executable, str(Path(__file__).with_name('compare-lightroom.py')),
+                       '--metadata-only', '--reference-dng', str(path), '--dng', str(path),
+                       '--out', str(Path(directory)/'report')]
+            subprocess.run(command, capture_output=True, text=True, check=True)
+            report = json.loads((Path(directory)/'report/report.json').read_text())
+            self.assertEqual(report['mode'], 'calibration-only')
+            self.assertEqual(report['reference_dng_calibration']['WhiteLevel'], 16383)
+            self.assertEqual(report['plugin_dng_calibration']['WhiteLevel'], 16383)
+            self.assertFalse((Path(directory)/'report/comparison.png').exists())
+            # Root LinearRaw should work as well as Adobe-style CFA SubIFDs.
+            tifffile.imwrite(path, np.zeros((16, 16, 3), dtype=np.float32),
+                             photometric=34892, metadata=None,
+                             extratags=[(50706, 'B', 4, (1, 4, 0, 0), False)])
+            self.assertEqual(comparison.dng_metadata(path)['PhotometricInterpretation'], 34892)
+
+    def test_calibration_rejects_non_dng_and_missing_raw_ifd(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)/'not-dng.tif'
+            tifffile.imwrite(path, np.zeros((8, 8, 3), dtype=np.uint8), photometric='rgb', metadata=None)
+            with self.assertRaisesRegex(ValueError, 'not a DNG'):
+                comparison.dng_metadata(path)
+            tifffile.imwrite(path, np.zeros((8, 8, 3), dtype=np.uint8), photometric='rgb', metadata=None,
+                             extratags=[(50706, 'B', 4, (1, 4, 0, 0), False)])
+            with self.assertRaisesRegex(ValueError, 'missing CFA or LinearRaw'):
+                comparison.dng_metadata(path)
+            command = [sys.executable, str(Path(__file__).with_name('compare-lightroom.py')), '--metadata-only']
+            run = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(run.returncode, 2)
+            self.assertIn('requires --dng and --reference-dng', run.stderr)
 
     def test_uncompressed_memmap_profile_and_preview(self):
         with tempfile.TemporaryDirectory() as directory:

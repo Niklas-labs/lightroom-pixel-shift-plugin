@@ -102,10 +102,30 @@ def dng_metadata(path):
              'AnalogBalance', 'ColorMatrix1', 'ColorMatrix2', 'CameraCalibration1',
              'CameraCalibration2', 'ForwardMatrix1', 'ForwardMatrix2',
              'CalibrationIlluminant1', 'CalibrationIlluminant2', 'ActiveArea',
-             'DefaultCropOrigin', 'DefaultCropSize', 'ProfileName']
+             'DefaultCropOrigin', 'DefaultCropSize', 'ProfileName',
+             'AsShotWhiteXY', 'ColorimetricReference', 'CameraCalibrationSignature',
+             'ProfileCalibrationSignature', 'DefaultBlackRender', 'LinearResponseLimit',
+             'PhotometricInterpretation', 'BitsPerSample', 'SampleFormat',
+             'BlackLevelRepeatDim', 'CFARepeatPatternDim', 'CFAPattern']
     with tifffile.TiffFile(path) as tif:
-        page = tif.pages[0]
-        return {name: page.tags[name].value for name in names if name in page.tags}
+        root = tif.pages[0]
+        if 'DNGVersion' not in root.tags:
+            raise ValueError(f'{path.name}: not a DNG (missing DNGVersion)')
+        # Adobe's mosaic DNG often has an RGB preview at IFD0 and the actual
+        # sensor image in a SubIFD. Collect inherited root calibration, then
+        # override image-specific tags from the first CFA/LinearRaw directory.
+        def pages(directories, depth=0):
+            for page in directories:
+                yield page
+                if depth < 4 and page.pages is not None:
+                    yield from pages(page.pages, depth+1)
+        raw = next((page for page in pages(tif.pages)
+                    if int(page.photometric) in (32803, 34892)), None)
+        if raw is None:
+            raise ValueError(f'{path.name}: missing CFA or LinearRaw image directory')
+        tags = {name: root.tags[name].value for name in names if name in root.tags}
+        tags.update({name: raw.tags[name].value for name in names if name in raw.tags})
+        return tags
 
 
 def save_preview(path, reference, candidate, ev, mask):
@@ -145,12 +165,31 @@ def json_value(value):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('sony', type=Path, help='Lightroom TIFF exported from Sony ARQ')
-    parser.add_argument('plugin', type=Path, help='Lightroom TIFF exported from plugin DNG')
+    parser.add_argument('sony', type=Path, nargs='?', help='Lightroom TIFF exported from Sony ARQ')
+    parser.add_argument('plugin', type=Path, nargs='?', help='Lightroom TIFF exported from plugin DNG')
     parser.add_argument('--dng', type=Path, help='Optional original plugin DNG, for calibration tags only')
+    parser.add_argument('--reference-dng', type=Path, help='Adobe DNG Converter output from one original ARW')
+    parser.add_argument('--metadata-only', action='store_true', help='Compare DNG calibration tags without TIFF exports')
     parser.add_argument('--out', type=Path, default=Path('pixelshift-comparison'))
     args = parser.parse_args()
+    if args.metadata_only:
+        if not (args.dng and args.reference_dng):
+            parser.error('--metadata-only requires --dng and --reference-dng')
+        if args.sony or args.plugin:
+            parser.error('--metadata-only does not take TIFF export arguments')
+    elif not (args.sony and args.plugin):
+        parser.error('provide both TIFF exports, or use --metadata-only with two DNGs')
     try:
+        if args.metadata_only:
+            report = dict(version=2, mode='calibration-only',
+                          plugin_dng_calibration=dng_metadata(args.dng),
+                          reference_dng_calibration=dng_metadata(args.reference_dng),
+                          limitations='Camera metadata only; no pixels or embedded Adobe profiles decoded. Normalized LinearRaw and mosaic RAW levels need not match numerically.')
+            args.out.mkdir(parents=True, exist_ok=True)
+            destination = args.out / 'report.json'
+            destination.write_text(json.dumps(report, indent=2, default=json_value)+'\n')
+            print(f'Share {destination}; no TIFF export or RAW pixel decode was performed.')
+            return
         sony, sony_info = open_export(args.sony)
         plugin, plugin_info = open_export(args.plugin)
         if sony.shape != plugin.shape:
@@ -168,6 +207,8 @@ def main():
                       measurements=result)
         if args.dng:
             report['plugin_dng_calibration'] = dng_metadata(args.dng)
+        if args.reference_dng:
+            report['reference_dng_calibration'] = dng_metadata(args.reference_dng)
         args.out.mkdir(parents=True, exist_ok=True)
         destination = args.out / 'report.json'
         destination.write_text(json.dumps(report, indent=2, default=json_value)+'\n')
