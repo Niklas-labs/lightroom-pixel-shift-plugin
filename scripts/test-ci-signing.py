@@ -7,6 +7,7 @@ import importlib.util
 import io
 import json
 import os
+import ssl
 from pathlib import Path
 import tempfile
 import unittest
@@ -21,11 +22,13 @@ packager = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(packager)
 
 
+CERT_DER = b'fixture public certificate DER'
+CERT_PEM = ssl.DER_cert_to_PEM_cert(CERT_DER)
+IDENTITY = hashlib.sha1(CERT_DER).hexdigest().upper()
+
+
 def material():
-    return {'certificate_p12_base64': base64.b64encode(b'fixture p12').decode(),
-            'certificate_password': 'fixture password', 'signing_identity_sha1': 'A'*40,
-            'notary_key_p8': '-----BEGIN PRIVATE KEY-----\nfixture\n-----END PRIVATE KEY-----\n',
-            'notary_key_id': 'ABC123DE45', 'notary_issuer_id': '00000000-0000-0000-0000-000000000001'}
+    return {'p12_base64': base64.b64encode(b'fixture p12').decode(), 'p12_password': 'fixture password'}
 
 
 class SigningTests(unittest.TestCase):
@@ -38,6 +41,8 @@ class SigningTests(unittest.TestCase):
                     'ACTIONS_ID_TOKEN_REQUEST_TOKEN': 'fixture-bearer'}
         self.directory = signing.credentials_directory(self.env)
         self.calls = []
+        self.addCleanup(patch.stopall)
+        patch.object(signing, 'CERTIFICATE_SHA256', hashlib.sha256(CERT_DER).hexdigest()).start()
 
     def fetch(self, fail_read=False, fail_revoke=False):
         def transport(url, headers, payload=None):
@@ -61,7 +66,7 @@ class SigningTests(unittest.TestCase):
         self.assertEqual(parse.parse_qs(parse.urlsplit(self.calls[0][0]).query)['audience'], [signing.BAO_ADDRESS])
         self.assertEqual(self.calls[1][0], signing.BAO_ADDRESS + '/v1/auth/token.actions.githubusercontent.com/login')
         self.assertEqual(self.calls[1][2], {'role': 'lightroom-pixel-shift-macos-signing', 'jwt': 'fixture-jwt'})
-        self.assertEqual(self.calls[2][0], signing.BAO_ADDRESS + '/v1/pixelshift-ci/data/macos-signing')
+        self.assertEqual(self.calls[2][0], signing.BAO_ADDRESS + '/v1/personal/data/apple/signing-identities/2TF792U5Y6/developer-id-application/01162bea66636d78e09580172b23cf922d71fe04e2fc8879b827dc98c6091960')
         self.assertTrue(self.calls[-1][0].endswith('/revoke-self'))
         self.assertEqual(json.loads((self.directory / 'credentials.json').read_text()), material())
         self.assertEqual(self.directory.stat().st_mode & 0o777, 0o700)
@@ -92,15 +97,26 @@ class SigningTests(unittest.TestCase):
             signing.request_json('http://untrusted.example/', {})
         self.assertIsNone(signing.NoRedirect().redirect_request(None, None, 302, '', {}, 'https://elsewhere.example'))
 
-    def test_schema_rejects_missing_unknown_and_malformed_material(self):
+    def test_schema_rejects_missing_and_malformed_material(self):
         for field in signing.FIELDS:
             data = material(); del data[field]
             with self.assertRaises(signing.SigningError): signing.validate_material(data)
-        for field, value in [('extra', 'x'), ('certificate_p12_base64', '!'), ('certificate_password', ''),
-                             ('signing_identity_sha1', '-'), ('notary_key_id', '-'), ('notary_issuer_id', '-'),
-                             ('notary_key_p8', 'not a key')]:
+        for field, value in [('p12_base64', '!'), ('p12_base64', ''), ('p12_password', 42), ('p12_password', '\0')]:
             data = material(); data[field] = value
             with self.assertRaises(signing.SigningError): signing.validate_material(data)
+        data=material(); data['p12_password']=''
+        self.assertEqual(signing.validate_material(data),data)
+        wrapped=material(); wrapped['p12_base64']='\n'+wrapped['p12_base64']+'\n'
+        self.assertEqual(signing.validate_material(wrapped),material())
+        data['metadata']={'label':'not persisted'}
+        self.assertEqual(set(signing.validate_material(data)),signing.FIELDS)
+
+    def test_identity_is_derived_from_pinned_certificate_and_team(self):
+        identities = '1) ' + IDENTITY + ' "Developer ID Application: Fixture (2TF792U5Y6)"'
+        self.assertEqual(signing.select_identity(CERT_PEM,identities),IDENTITY)
+        for certificates, listed in [('',identities),(CERT_PEM,identities.replace('2TF792U5Y6','WRONGTEAM')),
+                                     (CERT_PEM,identities.replace(IDENTITY,'A'*40))]:
+            with self.assertRaises(signing.SigningError): signing.select_identity(certificates,listed)
 
     def setup_binary(self):
         self.fetch()
@@ -117,7 +133,9 @@ class SigningTests(unittest.TestCase):
             if 'create-keychain' in command:
                 Path(command[-1]).touch()
             if 'find-identity' in command:
-                return '1) ' + 'A'*40 + ' "Developer ID Application: Fixture (TEAMID)"'
+                return '1) ' + IDENTITY + ' "Developer ID Application: Fixture (2TF792U5Y6)"'
+            if 'find-certificate' in command:
+                return CERT_PEM
             if 'delete-keychain' in command:
                 Path(command[-1]).unlink()
             return ''
@@ -125,7 +143,7 @@ class SigningTests(unittest.TestCase):
         command = next(c for c in calls if c[0]=='codesign' and '--force' in c)
         self.assertIn('--timestamp', command)
         self.assertIn('runtime', command)
-        self.assertEqual(command[command.index('--sign')+1], 'A'*40)
+        self.assertEqual(command[command.index('--sign')+1], IDENTITY)
         self.assertTrue(any('delete-keychain' in c for c in calls))
         self.assertFalse((self.directory / 'certificate.p12').exists())
         self.assertFalse((self.directory / 'signing.keychain-db').exists())
@@ -139,6 +157,11 @@ class SigningTests(unittest.TestCase):
 
     def test_apple_acceptance_required_receipt_is_bound_to_binary(self):
         binary = self.setup_binary()
+        with self.assertRaisesRegex(signing.SigningError,'Separate Apple notarization'):
+            signing.notarize(binary,self.directory,lambda *a,**kw: self.fail('Must not invoke Apple without credentials'))
+        signing.private_write(self.directory/'notary-credentials.json',json.dumps({
+            'notary_key_p8':'-----BEGIN PRIVATE KEY-----\nfixture\n-----END PRIVATE KEY-----\n',
+            'notary_key_id':'ABC123DE45','notary_issuer_id':'00000000-0000-0000-0000-000000000001'}).encode())
         for status in ('Invalid','In Progress','Accepted'):
             def runner(command,label,**kwargs):
                 self.assertEqual(command[0:3], ['xcrun','notarytool','submit'])
@@ -152,8 +175,8 @@ class SigningTests(unittest.TestCase):
                 self.assertEqual(receipt['engine_sha256'],hashlib.sha256(binary.read_bytes()).hexdigest())
             self.assertFalse((self.directory / 'notary-helper.zip').exists())
             self.assertFalse(any(self.directory.glob('*.p8')))
-        # No receipt, failed Apple status, or mismatched binary can be labelled notarized.
-        for receipt in [None, {'status':'Invalid'}, {'status':'Accepted','id':'00000000-0000-0000-0000-000000000002','engine_sha256':'bad'}]:
+        # Failed Apple status or mismatched binary cannot be labelled notarized.
+        for receipt in [{'status':'Invalid'}, {'status':'Accepted','id':'00000000-0000-0000-0000-000000000002','engine_sha256':'bad'}]:
             with self.assertRaises(ValueError):
                 packager.build_package(binary,'macos-universal',self.root/'dist','a'*40,{}, {},
                                        macos_signing='developer-id',notarization_receipt=receipt)
@@ -175,7 +198,10 @@ class SigningTests(unittest.TestCase):
                 self.assertEqual(job['permissions']['id-token'],'write')
                 self.assertEqual(job['environment'],'macos-signing')
                 signed=[s for s in job['steps'] if 'run' in s and 'ci_signing.py fetch' in s['run']]
-                self.assertEqual(signed[0]['if'], "vars.MACOS_SIGNING_ENABLED == 'true'")
+                self.assertNotIn('if',signed[0])
+                self.assertFalse(any('ad-hoc' in s.get('name','') for s in job['steps']))
+                self.assertFalse(any('ci_signing.py notarize' in s.get('run','') for s in job['steps']))
+                self.assertEqual(job.get('env',{}).get('MACOS_SIGNING_ENABLED'),None)
                 cleanup=[s for s in job['steps'] if 'run' in s and 'ci_signing.py cleanup' in s['run']]
                 self.assertEqual(cleanup[0]['if'],'always()')
                 for step in job['steps']:

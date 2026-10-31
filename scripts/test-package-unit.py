@@ -96,6 +96,18 @@ class PackagingTests(unittest.TestCase):
             PACKAGER.build_package(self.binary,'windows-x86_64',self.root/'bad','a'*40,
                                    self.metadata,self.info,macos_signing='developer-id',notarization_receipt=receipt)
 
+    def test_signed_without_notarization_is_labelled_accurately(self):
+        archive = PACKAGER.build_package(self.binary,'macos-universal',self.root/'dist','a'*40,
+                                        self.metadata,self.info,macos_signing='developer-id')
+        with zipfile.ZipFile(archive) as zipped:
+            manifest=json.loads(zipped.read('SonyPixelShift.lrplugin/manifest.json'))
+            self.assertTrue(manifest['publisher_signed'])
+            self.assertFalse(manifest['notarized'])
+            self.assertIsNone(manifest['notarization_submission_id'])
+            self.assertEqual(manifest['distribution'],'developer-id')
+            self.assertIn(b'signed but NOT notarized',zipped.read('INSTALL.txt'))
+            self.assertNotIn(b'This development build',zipped.read('INSTALL.txt'))
+
     def test_windows_uses_exe_and_records_platform(self):
         archive = self.package('windows-x86_64')
         with zipfile.ZipFile(archive) as zipped:

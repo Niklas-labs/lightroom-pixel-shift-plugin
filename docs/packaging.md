@@ -22,19 +22,19 @@ license/notice files. They require a native Rust metadata backend; the assembler
 refuses an engine reporting an external ExifTool dependency. No Python, Perl,
 ExifTool, Rust toolchain or developer PATH is required at runtime.
 
-macOS binaries are assembled with `lipo`. By default they are ad-hoc signed
-**development** builds. The optional Developer ID/notarization path retrieves
-Apple credentials from OpenBao using GitHub OIDC, not GitHub secrets. See
-[OpenBao signing setup](openbao-signing.md) for exact policy, role, credential
-import and the `MACOS_SIGNING_ENABLED=true` repository variable. Once enabled,
-signing or Apple acceptance failures stop publication; there is no ad-hoc
-fallback. The manifest identifies signing/notarization status.
+macOS binaries are assembled with `lipo` and Developer ID signed using the personal
+P12 record fetched from OpenBao via GitHub OIDC. Signing is enabled for every macOS
+packaging job; failures stop publication. See [signing setup](openbao-signing.md).
+The record supplies signing only, so current macOS artifacts are **signed but not
+notarized**. Manifest and installation notes report those states separately.
+Signing alone does not resolve normal download-time Gatekeeper rejection.
 
-Windows development binaries remain unsigned. For development macOS artifacts,
-see [macOS execution](lightroom-testing.md#macos-execution) for explicit per-helper
-quarantine instructions. Signed/notarized helper ZIPs need online ticket lookup;
-stapled offline containers and real browser-download acceptance remain follow-ups.
-The plugin never changes quarantine automatically.
+Windows development binaries remain unsigned. Local ad-hoc macOS builds remain
+available for development. For those or non-notarized artifacts, see
+[macOS execution](lightroom-testing.md#macos-execution). Automatic notarization
+needs separately authorized Apple API credentials; stapled offline containers
+and normal browser-download acceptance remain follow-ups. The plugin never
+changes quarantine automatically.
 
 CI uploads with `actions/upload-artifact` v7 and `archive: false`, preserving
 our ZIP bytes and their executable permission attributes. Uploading the unpacked

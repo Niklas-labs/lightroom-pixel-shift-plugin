@@ -13,20 +13,12 @@ from ci_signing import SigningError, private_write, validate_material
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--p12', type=Path, required=True)
-    parser.add_argument('--notary-key', type=Path, required=True)
-    parser.add_argument('--key-id', required=True)
-    parser.add_argument('--issuer-id', required=True)
-    parser.add_argument('--identity-sha1', required=True)
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     try:
         material = validate_material({
-            'certificate_p12_base64': base64.b64encode(args.p12.read_bytes()).decode('ascii'),
-            'certificate_password': getpass.getpass('P12 export password: '),
-            'signing_identity_sha1': args.identity_sha1.replace(' ', '').replace(':', ''),
-            'notary_key_p8': args.notary_key.read_text(),
-            'notary_key_id': args.key_id,
-            'notary_issuer_id': args.issuer_id,
+            'p12_base64': base64.b64encode(args.p12.read_bytes()).decode('ascii'),
+            'p12_password': getpass.getpass('P12 export password: '),
         })
         private_write(args.output, (json.dumps(material) + '\n').encode())
     except (SigningError, OSError, ValueError):

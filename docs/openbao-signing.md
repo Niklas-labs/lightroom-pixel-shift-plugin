@@ -1,78 +1,77 @@
 # macOS signing through OpenBao and GitHub OIDC
 
-CI retrieves Apple signing credentials using a fresh GitHub OIDC JWT, without a
-long-lived Bao token or Apple credentials in GitHub secrets. The private key
-still temporarily enters the macOS runner and an isolated keychain so Apple's
-`codesign` can use it; this is retrieval, not remote/HSM signing.
+The macOS packaging job always Developer ID signs its universal helper. It uses
+GitHub OIDC to retrieve the existing personal signing identity from Kalix Bao;
+there are no Apple credentials or long-lived Bao tokens in GitHub secrets.
+The private key temporarily enters an isolated runner keychain for `codesign`.
+This is secret retrieval, not remote/HSM signing.
 
-## Shared authentication and workload authorization
+## Authentication and signing record
 
 The [Kalix Bao configuration](https://gitlab.com/NiklasRosenstein/config/-/tree/main/app.rosenstein.cluster.kalix/bao)
-is authoritative. `auth-github-actions.tf` owns Actions issuer trust at
-**auth/token.actions.githubusercontent.com**, leaving `github.com` available for
-interactive GitHub authentication.
-`workload-lightroom-pixel-shift.tf` owns the **lightroom-pixel-shift-macos-signing**
-role and its policy. [MR !340](https://gitlab.com/NiklasRosenstein/config/-/merge_requests/340)
-adds them through the normal plan/apply pipeline. This plugin repository must not
-provision or reconfigure the shared authentication mount.
+is authoritative. `auth-github-actions.tf` owns issuer trust at
+`auth/token.actions.githubusercontent.com`. The workload-specific role is
+`lightroom-pixel-shift-macos-signing`; it binds this repository's owner/repository
+IDs, main branch, packaging workflow, push/manual events and `macos-signing`
+GitHub environment. Tokens expire within five minutes and have no default policy.
 
-The role restricts admission to the Kalix audience, immutable repository and
-owner IDs, main branch, push/manual events, packaging workflow and `macos-signing`
-GitHub environment. It grants read access to the single personal signing-identity
-record in the Terraform policy and self-token revocation. Tokens have no default
-policy and expire within five minutes. Those permissions and lifetime belong to
-the workload role; the shared backend can serve other independently scoped roles.
+The client reads this KV v2 record:
 
-GitHub-hosted macOS runners must reach `https://bao.kalix.cluster.rosenstein.app`
-over trusted HTTPS. Bao must reach GitHub's OIDC discovery/JWKS endpoints. This
-trusts code merged into main; OIDC cannot protect credentials from malicious
-changes an authorized maintainer merges into that workflow.
+```text
+personal/apple/signing-identities/2TF792U5Y6/developer-id-application/01162bea66636d78e09580172b23cf922d71fe04e2fc8879b827dc98c6091960
+```
 
-## Record migration required before enabling signing
+Its fields are **p12_base64** and **p12_password**. The HTTP API uses
+`personal/data/apple/...`; the UI's `show` segment is not part of the API path.
+The P12 must contain the signing certificate and matching private key. CI derives
+codesign's SHA-1 identity from the certificate whose DER SHA-256 matches the
+record path, then checks that it is a valid Developer ID Application identity
+for team `2TF792U5Y6`. Display names cannot select a different certificate.
 
-The client now logs into the shared backend and workload role above, but its
-retrieval/schema code still expects the earlier combined
-`pixelshift-ci/data/macos-signing` record. Adapt it to the existing personal
-signing-identity schema and separately authorize the notarization credentials
-before enabling signing. The Terraform role intentionally does not grant the
-legacy path or access to other Apple credentials. Preserve the personal record
-and its private key; do not broaden the policy or create a duplicate to bypass
-this mismatch.
+The existing secret does not need re-uploading or conversion. For a future local
+P12 export, `scripts/prepare-signing-secret.py` can generate the two-field JSON
+with mode 0600 and an interactive password prompt; it never prints the value.
+Terraform owns the policy, not the secret values. The plugin repo does not
+provision or reconfigure the shared auth mount.
 
-The current `prepare-signing-secret.py` helper also describes the legacy combined
-record and must be adapted with the reader. That schema contains
-`certificate_p12_base64`, `certificate_password`, `signing_identity_sha1`,
-`notary_key_p8`, `notary_key_id`, and `notary_issuer_id`. A certificate-only `.cer`
-is insufficient for signing, and the App Store Connect Team API key for
-notarization is distinct from the Developer ID certificate/private-key pair.
+GitHub-hosted runners must reach Bao over trusted HTTPS, and Bao must reach
+GitHub OIDC discovery/JWKS endpoints. The role trusts code merged into main;
+OIDC cannot protect credentials from malicious changes an authorized maintainer
+merges into that workflow.
 
-After migration, create GitHub environment **macos-signing**, restrict it to
-**main**, and set the nonsecret repository variable **MACOS_SIGNING_ENABLED=true**.
-Only the macOS packaging job gets `id-token: write`. Reviewer requirements are
-optional; the Bao role independently checks the trusted ref/workflow/environment.
+## Runner lifecycle
 
-## Runner lifecycle and verification
+Only the macOS packaging job gets `id-token: write`. It requests the Kalix
+audience, reads the single authorized record and immediately revokes its Bao
+token, including on validation errors. Files stay under a mode-0700 RUNNER_TEMP
+directory, outside GITHUB_ENV, step outputs, build caches and distribution ZIPs.
 
-The script requests an audience-bound GitHub token, reads the credential value,
-and immediately revokes its short-lived Bao token, including on read/validation
-errors. Credentials stay under a mode-0700 directory in RUNNER_TEMP, never in
-GITHUB_ENV, outputs, Rust caches or distribution archives.
+The keychain imports the P12 for Apple signing tools, signs with hardened runtime
+and a secure timestamp, verifies both architectures, then deletes the keychain.
+Final cleanup runs before smoke tests/upload even after failures. Disposal of the
+ephemeral runner remains the boundary for a lost/forcibly terminated runner.
+Authentication, certificate selection, revocation or signing failures stop the
+job; there is no ad-hoc fallback. No opt-in repository variable is required.
+Windows artifacts remain unsigned. Local assembly still supports development
+packages and explicitly records their different status.
 
-An ephemeral keychain imports the P12 and selects the exact Developer ID
-Application certificate fingerprint. The universal helper is signed with hardened
-runtime and a secure timestamp, then the keychain is deleted. `notarytool` must
-return **Accepted** before packaging. The receipt is bound to the helper SHA-256
-and kept outside build caches. Final cleanup runs even after failures; ephemeral
-runner disposal remains the boundary for a lost or forcibly terminated runner.
+## Notarization remains separate
 
-Once enabled, authentication, identity, signing, revocation or Apple acceptance
-failures stop publication. There is no ad-hoc fallback. With the variable unset
-or explicitly `false`, clearly labelled development packages still build. Other
-values are rejected. The first live signed run must verify the Bao role,
-certificate trust chain and Apple account permissions; portable tests do not
-establish that acceptance.
+The signing record contains no App Store Connect API credentials. CI therefore
+publishes a **Developer ID signed but not notarized** helper, reflected in
+`manifest.json`, INSTALL.txt and the job summary. Signing alone does not remove
+normal Gatekeeper rejection after a browser download.
 
-ZIPs and standalone Mach-O helpers cannot carry stapled tickets. Apple registers
-the signed helper for online Gatekeeper lookup. A stapled DMG/PKG remains a
-follow-up for offline verification. Test a normal browser download with quarantine
-intact on Apple Silicon and Intel. The plugin never removes quarantine itself.
+Apple notarization requires a separately authorized Team API key (`.p8`), key ID
+and issuer ID. Do not add unrelated credentials to the existing signing record
+or broaden its policy. The `notarize` CLI helper accepts a separate private
+`notary-credentials.json` with `notary_key_p8`, `notary_key_id` and
+`notary_issuer_id`; it is not called by current CI. A future Bao policy/fetch path
+must supply that record before enabling automatic notarization. It requires
+Apple status **Accepted** and binds the receipt to the helper SHA-256. The package
+assembler marks notarization true only for an accepted matching receipt.
+
+ZIPs and standalone Mach-O helpers cannot carry stapled tickets. A stapled DMG/PKG
+remains a follow-up for offline verification. After notarization is configured,
+test normal browser downloads with quarantine intact on Apple Silicon and Intel.
+The plugin never removes quarantine itself.

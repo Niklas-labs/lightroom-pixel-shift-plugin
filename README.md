@@ -14,7 +14,7 @@ and add that directory using **File → Plug-in Manager → Add**.
 
 The package embeds the matching Rust executable. No separate engine selection,
 Rust, Python, Perl or ExifTool installation is required. CI development builds are
-not publisher-signed/notarized; macOS may require approving the specific helper
+Developer ID signed on macOS but not yet notarized; macOS may require approving the specific helper
 in Privacy & Security. See [installation and testing](docs/lightroom-testing.md)
 and [CI packaging](docs/packaging.md).
 
@@ -156,6 +156,6 @@ Lightroom. DNG does not contain copied Sony MakerNotes or correction opcodes.
 Read [dependency evaluation](docs/dependencies.md), [architecture](docs/architecture.md)
 and [validation requirements](docs/validation.md) before calling a profile stable.
 
-macOS publisher signing can use [OpenBao with GitHub OIDC](docs/openbao-signing.md).
-The opt-in path requires Developer ID signing and Apple notarization before
-publishing; development builds remain ad-hoc signed until configured.
+macOS CI uses Developer ID signing through [OpenBao and GitHub OIDC](docs/openbao-signing.md).
+The personal P12 record supplies signing only; separate Apple notarization
+credentials are still required to resolve download-time Gatekeeper rejection.

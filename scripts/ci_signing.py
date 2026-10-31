@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import ssl
 import shutil
 import subprocess
 import sys
@@ -23,9 +24,10 @@ import zipfile
 BAO_ADDRESS = 'https://bao.kalix.cluster.rosenstein.app'
 AUTH_PATH = 'token.actions.githubusercontent.com'
 ROLE = 'lightroom-pixel-shift-macos-signing'
-SECRET_PATH = 'pixelshift-ci/data/macos-signing'
-FIELDS = {'certificate_p12_base64', 'certificate_password', 'signing_identity_sha1',
-          'notary_key_p8', 'notary_key_id', 'notary_issuer_id'}
+SECRET_PATH = 'personal/data/apple/signing-identities/2TF792U5Y6/developer-id-application/01162bea66636d78e09580172b23cf922d71fe04e2fc8879b827dc98c6091960'
+CERTIFICATE_SHA256 = SECRET_PATH.rsplit('/', 1)[1]
+TEAM_ID = '2TF792U5Y6'
+FIELDS = {'p12_base64', 'p12_password'}
 
 
 class SigningError(Exception):
@@ -68,23 +70,56 @@ def request_json(url, headers, payload=None):
 
 
 def validate_material(value):
-    if not isinstance(value, dict) or set(value) != FIELDS:
-        raise SigningError('Signing value has missing or unexpected fields')
-    if any(not isinstance(v, str) or not v or '\0' in v for v in value.values()):
-        raise SigningError('Signing fields must be nonempty strings without NUL bytes')
+    if not isinstance(value, dict) or not FIELDS.issubset(value):
+        raise SigningError('Signing record requires p12_base64 and p12_password')
+    # Ignore unrelated record metadata; never persist it or interpret it as notarization credentials.
+    value = {key: value[key] for key in FIELDS}
+    if any(not isinstance(v, str) or '\0' in v for v in value.values()):
+        raise SigningError('Signing fields must be strings without NUL bytes')
+    value['p12_base64'] = ''.join(value['p12_base64'].split())
     try:
-        decoded = base64.b64decode(value['certificate_p12_base64'], validate=True)
-        uuid.UUID(value['notary_issuer_id'])
+        decoded = base64.b64decode(value['p12_base64'], validate=True)
     except (ValueError, binascii.Error):
-        raise SigningError('Invalid certificate encoding or notarization issuer ID') from None
-    if not decoded or not re.fullmatch(r'[a-fA-F0-9]{40}', value['signing_identity_sha1']):
-        raise SigningError('Invalid certificate data or SHA-1 signing identity')
-    if not re.fullmatch(r'[A-Z0-9]{10}', value['notary_key_id']):
-        raise SigningError('Invalid notarization API key ID')
-    pem = value['notary_key_p8'].strip()
-    if not pem.startswith('-----BEGIN PRIVATE KEY-----') or not pem.endswith('-----END PRIVATE KEY-----'):
-        raise SigningError('Notarization key must be a PKCS#8 PEM private key')
+        raise SigningError('Invalid P12 base64 encoding') from None
+    if not decoded:
+        raise SigningError('The P12 is empty')
     return value
+
+
+def load_notary_material(directory):
+    path = directory / 'notary-credentials.json'
+    if not path.is_file():
+        raise SigningError('Separate Apple notarization credentials are not configured')
+    value = json.loads(path.read_text())
+    fields = {'notary_key_p8', 'notary_key_id', 'notary_issuer_id'}
+    if not isinstance(value, dict) or set(value) != fields or any(not isinstance(v,str) or not v or '\0' in v for v in value.values()):
+        raise SigningError('Invalid separate notarization credentials')
+    try:
+        uuid.UUID(value['notary_issuer_id'])
+    except ValueError:
+        raise SigningError('Invalid notarization issuer ID') from None
+    pem = value['notary_key_p8'].strip()
+    if not re.fullmatch(r'[A-Z0-9]{10}', value['notary_key_id']) or not pem.startswith('-----BEGIN PRIVATE KEY-----') or not pem.endswith('-----END PRIVATE KEY-----'):
+        raise SigningError('Invalid notarization API key')
+    for field in value.values():
+        mask(field)
+    return value
+
+
+def select_identity(certificates, identities):
+    # The record path identifies the certificate by its DER SHA-256 fingerprint.
+    # Derive codesign's SHA-1 identity from that certificate, not its display name.
+    expected = None
+    for pem in re.findall(r'-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----', certificates, re.S):
+        der = ssl.PEM_cert_to_DER_cert(pem)
+        if hashlib.sha256(der).hexdigest() == CERTIFICATE_SHA256:
+            expected = hashlib.sha1(der).hexdigest().upper()
+    if expected is None:
+        raise SigningError('Imported P12 does not contain the certificate identified by the Bao record path')
+    available = re.findall(r'([A-Fa-f0-9]{40})\s+"(Developer ID Application:[^"]+)"', identities)
+    if not any(fp.upper() == expected and name.endswith('(' + TEAM_ID + ')') for fp, name in available):
+        raise SigningError('Expected valid Developer ID Application identity and Apple team are absent')
+    return expected
 
 
 def private_write(path, data):
@@ -117,13 +152,19 @@ def fetch_credentials(env, transport=request_json, masker=mask):
         if not isinstance(jwt, str) or not jwt:
             raise SigningError('Missing GitHub OIDC token')
         masker(jwt)
-        login = transport(BAO_ADDRESS + '/v1/auth/' + AUTH_PATH + '/login', {}, {'role': ROLE, 'jwt': jwt})
+        try:
+            login = transport(BAO_ADDRESS + '/v1/auth/' + AUTH_PATH + '/login', {}, {'role': ROLE, 'jwt': jwt})
+        except SigningError as exc:
+            raise SigningError('OpenBao OIDC login failed: ' + str(exc)) from None
         token = login['auth']['client_token']
         if not isinstance(token, str) or not token:
             raise SigningError('Missing OpenBao session token')
         masker(token)
         try:
-            response = transport(BAO_ADDRESS + '/v1/' + SECRET_PATH, {'X-Vault-Token': token})
+            try:
+                response = transport(BAO_ADDRESS + '/v1/' + SECRET_PATH, {'X-Vault-Token': token})
+            except SigningError as exc:
+                raise SigningError('OpenBao signing record read failed: ' + str(exc)) from None
             material = validate_material(response['data']['data'])
             for value in material.values():
                 masker(value)
@@ -160,20 +201,18 @@ def sign(binary, directory, runner=run):
     certificate = directory / 'certificate.p12'
     password = secrets.token_urlsafe(32)
     mask(password)
-    private_write(certificate, base64.b64decode(material['certificate_p12_base64'], validate=True))
+    private_write(certificate, base64.b64decode(material['p12_base64'], validate=True))
     try:
         runner(['security', 'create-keychain', '-p', password, str(keychain)], 'Creating temporary keychain')
         runner(['security', 'set-keychain-settings', '-lut', '21600', str(keychain)], 'Configuring temporary keychain')
         runner(['security', 'unlock-keychain', '-p', password, str(keychain)], 'Unlocking temporary keychain')
-        runner(['security', 'import', str(certificate), '-k', str(keychain), '-P', material['certificate_password'],
+        runner(['security', 'import', str(certificate), '-k', str(keychain), '-P', material['p12_password'],
                 '-T', '/usr/bin/codesign', '-T', '/usr/bin/security'], 'Importing Developer ID certificate')
         runner(['security', 'set-key-partition-list', '-S', 'apple-tool:,apple:,codesign:', '-s', '-k', password,
                 str(keychain)], 'Configuring signing key access')
         identities = runner(['security', 'find-identity', '-v', '-p', 'codesigning', str(keychain)], 'Checking signing identity')
-        expected = material['signing_identity_sha1'].upper()
-        available = re.findall(r'([A-Fa-f0-9]{40})\s+"(Developer ID Application:[^"]+)"', identities)
-        if not any(fingerprint.upper() == expected for fingerprint, _ in available):
-            raise SigningError('Expected Developer ID Application identity is absent or invalid')
+        certificates = runner(['security', 'find-certificate', '-a', '-p', str(keychain)], 'Reading imported public certificates')
+        expected = select_identity(certificates, identities)
         runner(['codesign', '--force', '--sign', expected, '--keychain', str(keychain), '--options', 'runtime',
                 '--timestamp', str(binary)], 'Developer ID signing')
         runner(['codesign', '--verify', '--strict', '--all-architectures', '--verbose=2', str(binary)], 'Verifying signature')
@@ -185,7 +224,7 @@ def sign(binary, directory, runner=run):
 
 
 def notarize(binary, directory, runner=run):
-    material = load_material(directory)
+    material = load_notary_material(directory)
     key = directory / ('AuthKey_' + material['notary_key_id'] + '.p8')
     archive = directory / 'notary-helper.zip'
     private_write(key, material['notary_key_p8'].encode())
@@ -220,15 +259,11 @@ def cleanup(directory):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=['mode', 'fetch', 'sign', 'notarize', 'cleanup'])
+    parser.add_argument('command', choices=['fetch', 'sign', 'notarize', 'cleanup'])
     parser.add_argument('--binary', type=Path)
     parser.add_argument('--receipt', type=Path)
     args = parser.parse_args()
     try:
-        if args.command == 'mode':
-            if os.environ.get('MACOS_SIGNING_ENABLED', '') not in ('', 'false', 'true'):
-                raise SigningError('MACOS_SIGNING_ENABLED must be true, false, or unset')
-            return 0
         directory = credentials_directory(os.environ)
         if args.command == 'fetch':
             fetch_credentials(os.environ)

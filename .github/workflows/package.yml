@@ -52,7 +52,6 @@ jobs:
       contents: read
       id-token: write
     env:
-      MACOS_SIGNING_ENABLED: ${{ vars.MACOS_SIGNING_ENABLED }}
       MACOSX_DEPLOYMENT_TARGET: '12.0'
     steps:
       - uses: actions/checkout@v4
@@ -65,8 +64,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
-      - name: Validate signing mode
-        run: python scripts/ci_signing.py mode
       - name: Build both macOS architectures
         run: |
           cargo build --release --locked --target aarch64-apple-darwin -p pixelshift-cli
@@ -78,23 +75,13 @@ jobs:
           lipo target/universal/sony-pixelshift -verify_arch arm64 x86_64
           otool -L target/universal/sony-pixelshift
       - name: Fetch signing credentials from OpenBao using GitHub OIDC
-        if: vars.MACOS_SIGNING_ENABLED == 'true'
         run: python scripts/ci_signing.py fetch
       - name: Developer ID sign universal helper
-        if: vars.MACOS_SIGNING_ENABLED == 'true'
         run: python scripts/ci_signing.py sign --binary target/universal/sony-pixelshift
-      - name: Require Apple notarization acceptance
-        if: vars.MACOS_SIGNING_ENABLED == 'true'
-        run: python scripts/ci_signing.py notarize --binary target/universal/sony-pixelshift --receipt "$RUNNER_TEMP/pixelshift-signing/notarization-receipt.json"
-      - name: Package signed and notarized plugin
-        if: vars.MACOS_SIGNING_ENABLED == 'true'
-        run: python scripts/package-plugin.py --binary target/universal/sony-pixelshift --platform macos-universal --revision '${{ github.sha }}' --macos-signing developer-id --notarization-receipt "$RUNNER_TEMP/pixelshift-signing/notarization-receipt.json"
-      - name: Package ad-hoc development build
-        if: vars.MACOS_SIGNING_ENABLED != 'true'
-        run: |
-          codesign --force --sign - --timestamp=none target/universal/sony-pixelshift
-          codesign --verify --strict --all-architectures --verbose=2 target/universal/sony-pixelshift
-          python scripts/package-plugin.py --binary target/universal/sony-pixelshift --platform macos-universal --revision '${{ github.sha }}'
+      - name: Package Developer ID signed plugin
+        run: python scripts/package-plugin.py --binary target/universal/sony-pixelshift --platform macos-universal --revision '${{ github.sha }}' --macos-signing developer-id
+      - name: Report notarization status
+        run: echo 'Developer ID signing enabled. Apple notarization is not configured; this artifact is signed but not notarized.' >> "$GITHUB_STEP_SUMMARY"
       - name: Remove temporary signing credentials and keychain
         if: always()
         run: python scripts/ci_signing.py cleanup

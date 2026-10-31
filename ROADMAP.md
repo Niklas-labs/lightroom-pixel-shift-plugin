@@ -231,10 +231,12 @@ dispatch only after profiling, while keeping distributed binaries compatible.
 - [x] Implement opt-in OpenBao KV v2 credential retrieval using GitHub OIDC, with
   exact repository/branch/workflow/environment claims, short-lived sessions and
   ephemeral keychain cleanup. No Apple credentials in GitHub secrets.
-- [x] Gate signed packages on Developer ID signing and Apple acceptance, bind
-  notarization receipts to binary hashes, and label development builds explicitly.
-- [ ] Provision the live OpenBao role/value, enable signing, verify actual Apple
-  signatures/notarization, and test a normal browser download with
+- [x] Enable Developer ID signing from the personal P12 record via GitHub OIDC.
+  Distinguish signed-only output from notarized output in package metadata.
+- [x] Require accepted matching receipts before claiming notarization; retain
+  explicit development/signing/notarization labels.
+- [ ] Verify the first live signed artifact; authorize separate Apple notarization
+  credentials, enable notarization, and test a normal browser download with
   quarantine intact on a fresh macOS account (Intel and Apple Silicon). Installation
   should not require `xattr` or a global Gatekeeper change.
 - [ ] Add tagged release assets and Windows publisher signing; preserve native

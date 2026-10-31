@@ -73,16 +73,19 @@ def build_package(binary, platform, output_dir, revision, metadata, info=None, m
         raise ValueError('revision must be the full 40-character Git commit SHA')
     if macos_signing not in ('adhoc', 'developer-id'):
         raise ValueError('Unsupported signing mode')
-    notarized = macos_signing == 'developer-id'
+    publisher_signed = macos_signing == 'developer-id'
+    if publisher_signed and platform != 'macos-universal':
+        raise ValueError('Developer ID signing is only supported for macOS')
+    notarized = notarization_receipt is not None
     if notarized:
+        if not publisher_signed:
+            raise ValueError('Notarization receipt requires Developer ID signing')
         if platform != 'macos-universal' or not isinstance(notarization_receipt, dict) or notarization_receipt.get('status') != 'Accepted':
             raise ValueError('Developer ID packages require an accepted helper notarization receipt')
         import uuid
         uuid.UUID(notarization_receipt['id'])
         if notarization_receipt.get('engine_sha256') != hashlib.sha256(binary.read_bytes()).hexdigest():
             raise ValueError('Notarization receipt does not match the packaged binary')
-    elif notarization_receipt is not None:
-        raise ValueError('Notarization receipt requires Developer ID signing')
     info = info or read_engine_info(binary)
     version = info['engine_version']
     if not version or any(c not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-_' for c in version):
@@ -113,7 +116,8 @@ def build_package(binary, platform, output_dir, revision, metadata, info=None, m
         'metadata_backend': info['metadata_backend'],
         'engine': 'bin/' + PLATFORMS[platform],
         'engine_sha256': hashlib.sha256(engine.read_bytes()).hexdigest(),
-        'distribution': 'developer-id' if notarized else 'development',
+        'distribution': 'developer-id' if publisher_signed else 'development',
+        'publisher_signed': publisher_signed,
         'notarized': notarized,
         'macos_signing': macos_signing if platform == 'macos-universal' else None,
         'notarization_submission_id': notarization_receipt['id'] if notarized else None,
@@ -127,6 +131,9 @@ def build_package(binary, platform, output_dir, revision, metadata, info=None, m
         'The embedded macOS helper is Developer ID signed and notarized by Apple.\n'
         'This ZIP cannot carry a stapled ticket; first-run verification may need internet.\n'
         if notarized else
+        'The embedded macOS helper is Developer ID signed but NOT notarized.\n'
+        'macOS Gatekeeper may still block it after download until notarization is configured.\n'
+        if publisher_signed else
         'This development build is not notarized or publisher-signed. macOS may\n'
         'require approving the downloaded helper in Privacy & Security.\n'
         'For a trusted build, TESTING.md documents a manual per-helper xattr fix.\n'
