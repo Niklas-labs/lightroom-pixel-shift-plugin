@@ -126,5 +126,9 @@ broad rendering difference with a color component, not just edge vignetting.
 The plugin DNG report confirms the intended A/D65 matrices, AsShotNeutral
 [0.372228, 1, 0.645243], normalized black/white levels 0/1 and BaselineExposure
 0 EV. That confirms the metadata was written as implemented; it does not prove
-those values reproduce Adobe's native ARW/ARQ rendering. Adobe reference
-calibration and independent real-RAW normalization validation remain pending.
+those values reproduce Adobe's native ARW/ARQ rendering. The subsequent Adobe reference report shows identical AsShotNeutral and color
+matrices, but adds +0.35 EV BaselineExposure, CameraCalibration1/2
+(diag(0.9487, 1, 1.0363)), A/D65 forward matrices and matching `com.adobe`
+signatures. Build 7 now emits those tags from the a7CR YAML record. A new merge
+and Lightroom comparison are required to measure the improvement; independent
+real-RAW normalization and calibration across bodies/ISOs remain pending.

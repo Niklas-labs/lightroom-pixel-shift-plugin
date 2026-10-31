@@ -157,6 +157,59 @@
               "$ref": "#/$defs/sixteen"
             }
           }
+        },
+        "dng_rendering": {
+          "$ref": "#/$defs/dngRendering"
+        }
+      }
+    },
+    "matrix3x3": {
+      "type": "array",
+      "minItems": 9,
+      "maxItems": 9,
+      "items": {
+        "type": "number"
+      }
+    },
+    "dngRendering": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "baseline_exposure_ev",
+        "calibration_signature",
+        "camera_calibration_a",
+        "camera_calibration_d65",
+        "forward_matrix_a",
+        "forward_matrix_d65"
+      ],
+      "properties": {
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "baseline_exposure_ev": {
+          "type": "number",
+          "minimum": -5,
+          "maximum": 5
+        },
+        "calibration_signature": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[\\u0020-\\u007e]+$"
+        },
+        "camera_calibration_a": {
+          "$ref": "#/$defs/matrix3x3"
+        },
+        "camera_calibration_d65": {
+          "$ref": "#/$defs/matrix3x3"
+        },
+        "forward_matrix_a": {
+          "$ref": "#/$defs/matrix3x3"
+        },
+        "forward_matrix_d65": {
+          "$ref": "#/$defs/matrix3x3"
         }
       }
     }

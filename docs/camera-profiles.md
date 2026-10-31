@@ -21,6 +21,7 @@ captures and leave `validation_status` experimental until acceptance passes.
 | `decoder` | Supported RAW adapter; currently `sony_arw` |
 | `metadata` | Capture-tag interpretation; currently `sony_pixel_shift_v1` |
 | `calibration_source` | Currently `raw_metadata_and_rawler_catalog` |
+| `dng_rendering` | Optional reference-backed baseline exposure, A/D65 camera-calibration and forward matrices, matching calibration signature, and provenance |
 | `cfa` | Expected row-major uncropped 2x2 Bayer pattern |
 | `denoise` | Whether ordinary burst noise reduction is allowed |
 | `pixel_shift.four` | Optional four-shot layout, scale 1, exactly four distinct integer offsets |
@@ -50,6 +51,29 @@ color matrices continue to come from the RAW decoder/catalog. Decoded CFA is
 checked against the configured expectation. Do not copy guessed calibration or
 61 MP dimensions into every model entry. Compression decoding remains rawler's
 responsibility; reference-test the variants claimed for each model.
+
+`dng_rendering` adds rendering metadata without changing those decoded values.
+Its optional, complete record contains `source`, `baseline_exposure_ev`,
+`calibration_signature`, `camera_calibration_a`, `camera_calibration_d65`,
+`forward_matrix_a`, and `forward_matrix_d65`. Each matrix is nine row-major
+numbers. Runtime validation requires finite invertible matrices, nonempty
+provenance, an ASCII signature, and baseline exposure in [-5, 5] EV. Both DNG
+calibration signatures receive the configured value so readers can apply the
+camera-calibration matrices. A/D65 records follow their matching color-matrix
+illuminants; a single-D65 output uses the D65 records in slot 1.
+
+The initial a7CR record reproduces a user-supplied Lightroom-converted ARW
+reference: +0.35 EV baseline, camera calibration diag(0.9487, 1, 1.0363), A/D65
+forward matrices, and signature `com.adobe`. Sensor values, WB and original color
+matrices stay unchanged. This is an experimental model-level reference from one
+capture, not proof of every body's calibration or ISO-dependent behavior. Check
+other bodies/ISO settings before declaring the model validated. No Adobe look
+tables, tone curves or profile name are copied. TIFF and the approximate embedded
+preview renderer do not use this DNG-only metadata.
+
+Profiles without this optional block retain identity camera calibration, no
+forward matrices and 0 EV baseline. The schema remains version 1 with an additive
+optional record; older catalog files remain valid with the new engine.
 
 ## Loading and distribution
 

@@ -37,7 +37,12 @@ regression checks (`python scripts/test-comparison.py`): known EV shifts through
 ICC/compression validation, CLI report/preview generation and size rejection, and metadata-only DNG
 comparison with root/SubIFD inheritance and no pixel decoding.
 These run before CI packages the plugin.
-The reported slight darkening in Lightroom remains unresolved. Next compare
+Independent DNG tests also verify the a7CR +0.35 EV baseline, camera-calibration
+and A/D65 forward matrices against the measured Adobe reference, with matching
+signatures and single-D65 slot mapping. Samples and as-shot gains are unchanged.
+Invalid rendering records (including singular matrices) are rejected, and legacy
+profiles without them retain the previous 0 EV behavior. The reported slight
+darkening in Lightroom awaits retesting after these reference-backed changes. Next compare
 real ARW decoded values/levels with an independent decoder and compare source
 and merged rendering under controlled white balance, profiles and baseline
 exposure. Do not infer equal rendering from matching slider values alone.

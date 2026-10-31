@@ -159,8 +159,11 @@ real TIFF testing has exposed Adobe profile and RAW editing limitations.
   its actual Lightroom rendering remains to verify. A matched numeric-WB
   Sony ARQ/plugin export comparison measured -0.4328 EV median luminance,
   similar center/outer differences, and unequal RGB shifts. Plugin calibration
-  tags match intended output; Adobe-reference DNG metadata comparison and real
-  RAW normalization checks remain pending. See docs/brightness-comparison.md.
+  tags matched intended output. Adobe-reference metadata then showed identical
+  WB/color matrices but +0.35 EV baseline and additional camera-calibration and
+  forward matrices. Build 7 adds these from experimental a7CR YAML metadata;
+  real Lightroom confirmation and RAW normalization/cross-ISO/body checks remain
+  pending. See docs/brightness-comparison.md.
 - [ ] Inherit the reference photo's lens-correction enable preference for a
   compatible merged DNG. Initial feedback required manually enabling the
   correctly preselected lens profile. Keep this separate from copying source

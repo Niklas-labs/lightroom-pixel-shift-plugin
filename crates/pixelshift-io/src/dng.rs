@@ -76,6 +76,9 @@ pub fn write_dng_from_source(
         "invalid white balance"
     );
     super::inverse(color.xyz_to_camera)?;
+    if let Some(rendering) = &color.dng_rendering {
+        rendering.validate()?;
+    }
     // Classic TIFF offsets are sufficient for a7CR 244 MP RGB32 (~2.93 GB).
     // Reject larger output before creating a file instead of overflowing offsets.
     ensure!(
@@ -277,6 +280,50 @@ pub fn write_dng_from_source(
                 write_aligned_tag(tags, Tag::Unknown(50721), &matrix[..])?;
                 write_aligned_tag(tags, Tag::Unknown(50778), 21u16)?;
             }
+            if let Some(rendering) = &color.dng_rendering {
+                let dual = matrix_a.is_some();
+                for (tag, values) in [
+                    (
+                        50723,
+                        if dual {
+                            rendering.camera_calibration_a
+                        } else {
+                            rendering.camera_calibration_d65
+                        },
+                    ),
+                    (
+                        50964,
+                        if dual {
+                            rendering.forward_matrix_a
+                        } else {
+                            rendering.forward_matrix_d65
+                        },
+                    ),
+                ] {
+                    let values = values.map(signed).into_iter().collect::<Result<Vec<_>>>()?;
+                    write_aligned_tag(tags, Tag::Unknown(tag), &values[..])?;
+                }
+                if dual {
+                    for (tag, values) in [
+                        (50724, rendering.camera_calibration_d65),
+                        (50965, rendering.forward_matrix_d65),
+                    ] {
+                        let values = values.map(signed).into_iter().collect::<Result<Vec<_>>>()?;
+                        write_aligned_tag(tags, Tag::Unknown(tag), &values[..])?;
+                    }
+                }
+                // Signatures must match for readers to use CameraCalibration.
+                write_aligned_tag(
+                    tags,
+                    Tag::Unknown(50931),
+                    rendering.calibration_signature.as_str(),
+                )?;
+                write_aligned_tag(
+                    tags,
+                    Tag::Unknown(50932),
+                    rendering.calibration_signature.as_str(),
+                )?;
+            }
             write_aligned_tag(tags, Tag::Unknown(50728), &neutral[..])?; // reciprocal WB
             write_aligned_tag(tags, Tag::Unknown(50713), &[1u16, 1][..])?;
             // TIFF Rational is not Copy; write the three channel black levels explicitly.
@@ -302,7 +349,16 @@ pub fn write_dng_from_source(
                 &[crop.width as u32, crop.height as u32][..],
             )?;
             write_aligned_tag(tags, Tag::Unknown(50829), &[0u32, 0, height, width][..])?;
-            write_aligned_tag(tags, Tag::Unknown(50730), signed(0.0)?)?; // no arbitrary exposure shift
+            write_aligned_tag(
+                tags,
+                Tag::Unknown(50730),
+                signed(
+                    color
+                        .dng_rendering
+                        .as_ref()
+                        .map_or(0., |r| r.baseline_exposure_ev),
+                )?,
+            )?; // reference-backed rendering metadata
             write_aligned_tag(tags, Tag::Unknown(50731), rational(1.0)?)?;
             write_aligned_tag(tags, Tag::Unknown(50732), rational(1.0)?)?;
             directory.finish()?;
@@ -334,6 +390,7 @@ mod tests {
     use std::fs::{self, File};
     fn color() -> Color {
         Color {
+            dng_rendering: None,
             xyz_to_camera_a: None,
             default_crop: Some(super::super::Crop {
                 x: 2,

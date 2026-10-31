@@ -1,4 +1,4 @@
-//! Versioned camera capabilities; numeric sensor calibration remains decoder-owned.
+//! Versioned camera capabilities and optional, reference-backed DNG rendering metadata.
 use anyhow::{Context, Result, ensure};
 use pixelshift_core::{CameraProfile, Mode};
 use serde::{Deserialize, Serialize};
@@ -25,10 +25,60 @@ pub struct Profile {
     pub decoder: String,
     pub metadata: String,
     pub calibration_source: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dng_rendering: Option<DngRendering>,
     pub cfa: String,
     pub denoise: bool,
     pub pixel_shift: Layouts,
     pub notes: String,
+}
+/// DNG rendering metadata in reference-camera coordinates. These matrices and
+/// exposure are tags only: never multiply them into the merged sensor samples.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct DngRendering {
+    pub source: String,
+    pub baseline_exposure_ev: f32,
+    pub calibration_signature: String,
+    pub camera_calibration_a: [f32; 9],
+    pub camera_calibration_d65: [f32; 9],
+    pub forward_matrix_a: [f32; 9],
+    pub forward_matrix_d65: [f32; 9],
+}
+impl DngRendering {
+    pub fn validate(&self) -> Result<()> {
+        ensure!(
+            !self.source.trim().is_empty(),
+            "DNG calibration needs provenance"
+        );
+        ensure!(
+            self.baseline_exposure_ev.is_finite()
+                && (-5.0..=5.0).contains(&self.baseline_exposure_ev),
+            "invalid DNG baseline exposure"
+        );
+        ensure!(
+            !self.calibration_signature.trim().is_empty()
+                && self.calibration_signature.len() <= 128
+                && self
+                    .calibration_signature
+                    .bytes()
+                    .all(|b| (0x20..=0x7e).contains(&b)),
+            "invalid DNG calibration signature"
+        );
+        for matrix in [
+            self.camera_calibration_a,
+            self.camera_calibration_d65,
+            self.forward_matrix_a,
+            self.forward_matrix_d65,
+        ] {
+            ensure!(
+                matrix.iter().all(|v| v.is_finite()),
+                "non-finite DNG rendering matrix"
+            );
+            crate::inverse(matrix).context("singular DNG rendering matrix")?;
+        }
+        Ok(())
+    }
 }
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -58,6 +108,12 @@ impl Catalog {
         }
         if let Some(cameras) = raw.get("cameras").and_then(|v| v.as_array()) {
             for camera in cameras {
+                if let Some(rendering) = camera.get("dng_rendering") {
+                    ensure!(
+                        rendering.is_object(),
+                        "dng_rendering must be an object, not null"
+                    );
+                }
                 if let Some(layouts) = camera.get("pixel_shift").and_then(|v| v.as_object()) {
                     ensure!(
                         layouts.values().all(|v| v.is_object()),
@@ -99,6 +155,9 @@ impl Catalog {
                 "invalid validation status"
             );
             p.cfa_pattern()?;
+            if let Some(rendering) = &p.dng_rendering {
+                rendering.validate()?;
+            }
             ensure!(
                 p.pixel_shift.four.is_some() || p.pixel_shift.sixteen.is_some(),
                 "profile needs a Pixel Shift layout"
@@ -232,6 +291,36 @@ mod tests {
                 assert_eq!(p.shift(mode, i), pixelshift_core::SonyA7Cr.shift(mode, i));
             }
         }
+    }
+    #[test]
+    fn rejects_invalid_rendering_calibration_and_accepts_legacy_profiles() {
+        let baseline: serde_json::Value = serde_saphyr::from_str(EMBEDDED).unwrap();
+        for case in 0..7 {
+            let mut value = baseline.clone();
+            let rendering = &mut value["cameras"][0]["dng_rendering"];
+            match case {
+                0 => rendering["baseline_exposure_ev"] = 6.into(),
+                1 => rendering["source"] = "".into(),
+                2 => rendering["calibration_signature"] = "bad\0signature".into(),
+                3 => rendering["camera_calibration_a"] = serde_json::json!(vec![0.; 9]),
+                4 => rendering["forward_matrix_d65"] = serde_json::json!([1., 2.]),
+                5 => rendering["typo"] = true.into(),
+                _ => *rendering = serde_json::Value::Null,
+            }
+            assert!(
+                Catalog::parse(&serde_saphyr::to_string(&value).unwrap()).is_err(),
+                "case {case}"
+            );
+        }
+        let mut legacy = baseline;
+        legacy["cameras"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("dng_rendering");
+        let legacy = Catalog::parse(&serde_saphyr::to_string(&legacy).unwrap()).unwrap();
+        assert!(legacy.cameras[0].dng_rendering.is_none());
+        let profile = Catalog::embedded().unwrap().cameras.remove(0);
+        assert!((profile.dng_rendering.unwrap().baseline_exposure_ev - 0.35).abs() < 1e-6);
     }
     #[test]
     fn rejects_invalid_profiles() {

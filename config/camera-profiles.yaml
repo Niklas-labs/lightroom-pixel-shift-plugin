@@ -1,5 +1,6 @@
 # yaml-language-server: $schema=./camera-profiles.schema.json
-# Camera capabilities; sensor calibration comes from RAW metadata and rawler.
+# Camera capabilities and reference-backed DNG rendering metadata.
+# Sensor levels/WB and color matrices still come from RAW metadata and rawler.
 schema_version: 1
 
 cameras:
@@ -11,6 +12,15 @@ cameras:
     decoder: sony_arw
     metadata: sony_pixel_shift_v1
     calibration_source: raw_metadata_and_rawler_catalog
+    # Experimental: reproduce reference metadata, without scaling RAW samples.
+    dng_rendering:
+      source: "Lightroom Classic conversion of an original a7CR ARW; single-capture reference, full rendering validation pending."
+      baseline_exposure_ev: 0.35
+      calibration_signature: "com.adobe"
+      camera_calibration_a: [0.9487, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0363]
+      camera_calibration_d65: [0.9487, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0363]
+      forward_matrix_a: [0.4616, 0.3771, 0.1256, 0.2079, 0.7562, 0.0359, 0.0798, 0.0011, 0.7442]
+      forward_matrix_d65: [0.4677, 0.3226, 0.174, 0.267, 0.6792, 0.0539, 0.1207, 0.0037, 0.7007]
     cfa: RGGB
     denoise: true
 

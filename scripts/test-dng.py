@@ -54,7 +54,14 @@ def check(engine):
                 for tag, matrix in [('ColorMatrix1', frame['color']['xyz_to_camera_a']), ('ColorMatrix2', frame['color']['xyz_to_camera'])]:
                     values = raw.tags[tag].value
                     np.testing.assert_allclose([values[i]/values[i+1] for i in range(0,18,2)],matrix,rtol=0,atol=1e-6)
-                assert raw.tags['BaselineExposure'].value == (0,1000000)
+                np.testing.assert_allclose(raw.tags['BaselineExposure'].value[0]/raw.tags['BaselineExposure'].value[1], .35, atol=1e-6)
+                assert raw.tags['CameraCalibrationSignature'].value == 'com.adobe'
+                assert raw.tags['ProfileCalibrationSignature'].value == 'com.adobe'
+                for name, matrix in [('CameraCalibration1', [.9487,0,0,0,1,0,0,0,1.0363]), ('CameraCalibration2', [.9487,0,0,0,1,0,0,0,1.0363]),
+                                     ('ForwardMatrix1', [.4616,.3771,.1256,.2079,.7562,.0359,.0798,.0011,.7442]),
+                                     ('ForwardMatrix2', [.4677,.3226,.1740,.2670,.6792,.0539,.1207,.0037,.7007])]:
+                    entries = raw.tags[name].value
+                    np.testing.assert_allclose([entries[i]/entries[i+1] for i in range(0,18,2)], matrix, rtol=0, atol=1e-6)
                 neutral = raw.tags['AsShotNeutral'].value
                 np.testing.assert_allclose([neutral[i]/neutral[i+1] for i in range(0,6,2)], [0.5,1,2/3], atol=1e-6)
                 assert preview.shape[-1] == 3 and max(preview.shape[:2]) <= 512
@@ -126,6 +133,9 @@ def check(engine):
             raw = dng.pages[0]
             assert raw.tags['CalibrationIlluminant1'].value == 21
             assert 'ColorMatrix2' not in raw.tags and 'CalibrationIlluminant2' not in raw.tags
+            assert 'CameraCalibration2' not in raw.tags and 'ForwardMatrix2' not in raw.tags
+            entries = raw.tags['ForwardMatrix1'].value
+            np.testing.assert_allclose([entries[i]/entries[i+1] for i in range(0,18,2)], [.4677,.3226,.1740,.2670,.6792,.0539,.1207,.0037,.7007], atol=1e-6)
             np.testing.assert_allclose(raw.asarray(),np.broadcast_to(expected,raw.shape),rtol=0,atol=1e-6)
         print('single-D65 fallback: calibration and unmodified sample checks passed')
         check_gradient_photometry(engine, root, job)

@@ -154,6 +154,7 @@ mod tests {
             },
             white_balance: [2.0, 1.0, 1.5],
             xyz_to_camera: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+            dng_rendering: None,
             xyz_to_camera_a: None,
             orientation: 1,
         }

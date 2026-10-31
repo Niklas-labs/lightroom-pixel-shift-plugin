@@ -108,6 +108,7 @@ fn native_sensor_to_dng_preserves_absolute_brightness_and_color() {
                     xyz_to_camera: [
                         0.82, -0.2976, -0.0719, -0.4296, 1.2053, 0.2532, -0.0429, 0.1282, 0.5774,
                     ],
+                    dng_rendering: None,
                     xyz_to_camera_a: None,
                     orientation: 1,
                 };

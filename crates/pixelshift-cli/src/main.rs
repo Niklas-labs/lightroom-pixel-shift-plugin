@@ -320,6 +320,7 @@ fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
                 sensor_size.0, sensor_size.1, source_crop
             ))?;
             let mut color = decoded[0].color.clone();
+            color.dng_rendering = profile.dng_rendering.clone();
             color
                 .photo_metadata
                 .model
@@ -329,14 +330,21 @@ fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
                 .make
                 .get_or_insert_with(|| "SONY".into());
             diagnostics.record(format!(
-                "color calibration: {}; as-shot WB gains: {:?}; DNG baseline exposure: 0 EV",
+                "color calibration: {}; as-shot WB gains: {:?}; DNG baseline exposure: {} EV",
                 if color.xyz_to_camera_a.is_some() {
                     "dual illuminant A + D65"
                 } else {
                     "single illuminant D65"
                 },
-                color.white_balance
+                color.white_balance,
+                color
+                    .dng_rendering
+                    .as_ref()
+                    .map_or(0., |r| r.baseline_exposure_ev)
             ))?;
+            if let Some(rendering) = &color.dng_rendering {
+                diagnostics.record(format!("DNG rendering reference: {}", rendering.source))?;
+            }
             reference_frames.sort_by_key(|f| f.sequence);
             if mode == Mode::Denoise {
                 for (i, frame) in reference_frames.iter_mut().enumerate() {

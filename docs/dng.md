@@ -21,9 +21,16 @@ Menu commands are registered under **Library → Plug-in Extras** only.
   These are catalog calibrations, not a claim of identical Adobe ARW rendering.
   The small preview/TIFF renderer still uses D65 only; compare Lightroom Develop
   rendering, rather than an embedded thumbnail, for the calibration test.
+- Optional model-profile DNG rendering metadata: reference-backed BaselineExposure,
+  CameraCalibration1/2, ForwardMatrix1/2 and matching calibration signatures.
+  The a7CR profile now uses +0.35 EV and the calibration measured in a Lightroom
+  conversion of an original ARW. No adjustment is multiplied into sensor pixels;
+  original AsShotNeutral and ColorMatrix values remain unchanged. Profiles without
+  this metadata keep 0 EV. See [camera configuration](camera-profiles.md).
 - Original camera/lens/exposure EXIF when available, orientation, software and
   experimental merge description. UniqueCameraModel uses the camera identity;
-  no Adobe profile, Sony MakerNote, serial, GPS or lens-correction opcode is copied.
+  no Adobe look table, tone curve, profile name, Sony MakerNote, serial, GPS or
+  lens-correction opcode is copied.
 - ActiveArea describes the valid reconstructed buffer. DefaultCrop maps the
   reference ARW's preferred decoder crop into this buffer, including nominal
   sensor shift, merger origin and sixteen-shot scale. It is intersected with
@@ -116,6 +123,25 @@ exposure (0 EV) unchanged. Independent/tag/Adobe validation passes; actual Light
 WB numbers, color and brightness remain to verify. Different As Shot temperature/
 tint numbers alone do not prove an incorrect sensor white balance; do not force
 matching displayed values or add a camera exposure offset without measurement.
+
+## Reference-backed rendering calibration (build 7)
+
+The user's Adobe-converted source DNG establishes that AsShotNeutral and both
+ColorMatrix tags match ours numerically. Adobe additionally writes +0.35 EV
+BaselineExposure, CameraCalibration1/2 diag(0.9487, 1, 1.0363), A/D65 forward
+matrices and matching `com.adobe` calibration signatures. Build 7 emits those
+reference-backed tags from YAML. The earlier 0 EV statements above describe the
+previous builds, not the current configured a7CR output.
+
+This is evidence for a metadata mismatch, not a measured final rendering fix.
+Validate a newly merged DNG in Lightroom: compare As Shot WB with the source's
+5850/+15 and repeat the Sony ARQ comparison. Avoid reusing a previous output or
+its cached previews. Raw samples must remain bit-identical with/without this
+metadata; no ad-hoc +0.433 EV pixel gain is used. Tests check tag values with an
+independent reader and exact synthetic photometry after writing/decoding. Full
+Adobe profile behavior, real RAW normalization, additional ISOs and other camera
+bodies still require reference captures. The embedded preview/TIFF renderer is
+an approximation that does not implement Adobe's rendering/profile pipeline.
 
 ## Streamed/compressed output acceptance
 

@@ -78,6 +78,9 @@ pub struct Color {
     pub default_crop: Option<Crop>,
     #[serde(default)]
     pub photo_metadata: PhotoMetadata,
+    /// Reference-backed metadata; it does not alter sensor samples or TIFF rendering.
+    #[serde(default)]
+    pub dng_rendering: Option<profiles::DngRendering>,
     pub white_balance: [f32; 3],
     /// XYZ D65 to camera, row major.
     pub xyz_to_camera: [f32; 9],
@@ -321,6 +324,7 @@ fn decode_internal(
         xyz_to_camera_a,
         photo_metadata: capture.photo_metadata.clone(),
         orientation: raw.orientation.to_u16(),
+        dng_rendering: None,
         white_balance: [raw.wb_coeffs[0], raw.wb_coeffs[1], raw.wb_coeffs[2]],
         xyz_to_camera: matrix
             .clone()
@@ -682,6 +686,7 @@ mod tests {
     use super::*;
     fn calibration() -> Color {
         Color {
+            dng_rendering: None,
             xyz_to_camera_a: None,
             default_crop: None,
             photo_metadata: PhotoMetadata::default(),
