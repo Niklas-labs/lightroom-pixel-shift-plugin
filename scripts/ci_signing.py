@@ -21,8 +21,8 @@ import uuid
 import zipfile
 
 BAO_ADDRESS = 'https://bao.kalix.cluster.rosenstein.app'
-AUTH_PATH = 'github-pixelshift'
-ROLE = 'macos-signing'
+AUTH_PATH = 'token.actions.githubusercontent.com'
+ROLE = 'lightroom-pixel-shift-macos-signing'
 SECRET_PATH = 'pixelshift-ci/data/macos-signing'
 FIELDS = {'certificate_p12_base64', 'certificate_password', 'signing_identity_sha1',
           'notary_key_p8', 'notary_key_id', 'notary_issuer_id'}

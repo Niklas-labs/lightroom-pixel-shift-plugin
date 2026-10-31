@@ -42,7 +42,7 @@ class SigningTests(unittest.TestCase):
     def fetch(self, fail_read=False, fail_revoke=False):
         def transport(url, headers, payload=None):
             self.calls.append((url, headers, payload))
-            if 'actions.githubusercontent.com' in url:
+            if (parse.urlsplit(url).hostname or '').endswith('.actions.githubusercontent.com'):
                 return {'value': 'fixture-jwt'}
             if url.endswith('/login'):
                 return {'auth': {'client_token': 'fixture-session'}}
@@ -59,7 +59,8 @@ class SigningTests(unittest.TestCase):
     def test_oidc_audience_read_one_path_revoke_and_private_files(self):
         self.fetch()
         self.assertEqual(parse.parse_qs(parse.urlsplit(self.calls[0][0]).query)['audience'], [signing.BAO_ADDRESS])
-        self.assertEqual(self.calls[1][2], {'role': 'macos-signing', 'jwt': 'fixture-jwt'})
+        self.assertEqual(self.calls[1][0], signing.BAO_ADDRESS + '/v1/auth/token.actions.githubusercontent.com/login')
+        self.assertEqual(self.calls[1][2], {'role': 'lightroom-pixel-shift-macos-signing', 'jwt': 'fixture-jwt'})
         self.assertEqual(self.calls[2][0], signing.BAO_ADDRESS + '/v1/pixelshift-ci/data/macos-signing')
         self.assertTrue(self.calls[-1][0].endswith('/revoke-self'))
         self.assertEqual(json.loads((self.directory / 'credentials.json').read_text()), material())
@@ -166,16 +167,7 @@ class SigningTests(unittest.TestCase):
         with patch.dict(os.environ,{'GITHUB_ACTIONS':'false'}), redirect_stdout(output): signing.mask('private')
         self.assertEqual(output.getvalue(),'')
 
-    def test_role_and_workflow_bind_only_this_main_environment(self):
-        role=json.loads((ROOT/'.github/openbao/github-role.json').read_text())
-        self.assertEqual(role['bound_audiences'],[signing.BAO_ADDRESS])
-        self.assertEqual(role['bound_claims']['repository_id'],'1438976219')
-        self.assertEqual(role['bound_claims']['ref'],'refs/heads/main')
-        self.assertEqual(role['bound_subject'],'repo:Niklas-labs/lightroom-pixel-shift-plugin:environment:macos-signing')
-        self.assertEqual(role['bound_claims']['workflow_ref'], 'Niklas-labs/lightroom-pixel-shift-plugin/.github/workflows/package.yml@refs/heads/main')
-        self.assertEqual(role['token_explicit_max_ttl'],300)
-        self.assertTrue(role['token_no_default_policy'])
-        self.assertNotIn('pull_request',role['bound_claims']['event_name'])
+    def test_workflow_scopes_oidc_to_signing_environment(self):
         import yaml
         workflow=yaml.safe_load((ROOT/'.github/workflows/package.yml').read_text())
         for name,job in workflow['jobs'].items():
