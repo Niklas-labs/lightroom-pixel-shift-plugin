@@ -1,5 +1,6 @@
 //! Scene-linear camera RGB DNG, with bounded strip writes and no baked development.
-use super::{Color, OutputWriter, render_srgb, write_aligned_tag, write_exif};
+use super::preview::render_preview;
+use super::{Color, OutputWriter, write_aligned_tag, write_exif};
 use super::{OutputCompression, OutputStats, WriteOptions};
 use anyhow::{Result, ensure};
 use pixelshift_core::{Image, ImageSource, Region};
@@ -171,7 +172,7 @@ pub fn write_dng_from_source(
             }
             payload.finish()?;
             let preview_start = Instant::now();
-            let preview = render_srgb(
+            let preview = render_preview(
                 &Image {
                     width: pw,
                     height: ph,
@@ -204,6 +205,17 @@ pub fn write_dng_from_source(
             }
             write_aligned_tag(&mut thumb, Tag::BitsPerSample, &[8u16, 8, 8][..])?;
             write_aligned_tag(&mut thumb, Tag::SampleFormat, &[1u16, 1, 1][..])?;
+            write_aligned_tag(&mut thumb, Tag::Unknown(50966), "Sony Pixel Shift")?;
+            write_aligned_tag(&mut thumb, Tag::Unknown(50967), env!("CARGO_PKG_VERSION"))?;
+            write_aligned_tag(
+                &mut thumb,
+                Tag::Unknown(50968),
+                if color.dng_rendering.is_some() {
+                    "Calibrated As Shot v1"
+                } else {
+                    "Basic As Shot v1"
+                },
+            )?;
             write_aligned_tag(&mut thumb, Tag::Unknown(50970), 2u32)?;
             write_aligned_tag(
                 &mut thumb,

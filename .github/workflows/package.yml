@@ -43,6 +43,8 @@ jobs:
       - name: Validate native RAW normalization diagnostics
         run: python scripts/test-raw-levels.py
       - run: cargo build --locked -p pixelshift-cli
+      - name: Validate bounded real-capture benchmark workflow
+        run: python scripts/test-capture-benchmark.py --engine target/debug/sony-pixelshift
       - name: Validate DNG samples and development with independent readers
         run: python scripts/test-dng.py --engine target/debug/sony-pixelshift
 

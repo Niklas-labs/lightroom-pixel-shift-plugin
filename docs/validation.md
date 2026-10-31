@@ -190,3 +190,21 @@ Memory-menu binding regression: resolve the documented `bind_to_object` and
 shown. Check new preferences (RAM), saved RAM/Disk, invalid saved values (RAM),
 selection persistence and the engine job's storage field. Ignore unsupported
 `bind_to` properties so the mock cannot hide the original blank-menu defect.
+
+## Build 10 preview and 16-shot validation
+
+Four renderer regressions exercise baseline gain before encoding, negative/
+headroom display clipping without RAW mutation, non-diagonal calibration and
+reference WB, A/D65 neutral estimation and legacy/error behavior. Independent
+`tifffile` checks decode neutral previews at the tagged +0.35 EV and verify exact
+main camera-RGB bits for both single and dual calibrations. Library/Develop
+appearance still requires Lightroom host acceptance and does not establish Adobe
+profile equivalence.
+
+`scripts/test-capture-benchmark.py --engine target/debug/sony-pixelshift` checks
+strip-wise hashes across compression/strip lengths (forbidding full-frame reads),
+then exercises the benchmark controller on an explicit synthetic 16-shot set,
+including RAM/Disk output/preview/crop equality and no-overwrite behavior.
+Actual full-size timing, peak memory, quality and Sony comparison follow
+[the real-capture checklist](16-shot-validation.md); synthetic controller tests
+cannot mark those complete.

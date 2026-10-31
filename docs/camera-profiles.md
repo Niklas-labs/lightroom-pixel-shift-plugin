@@ -69,8 +69,9 @@ forward matrices, and signature `com.adobe`. Sensor values, WB and original colo
 matrices stay unchanged. This is an experimental model-level reference from one
 capture, not proof of every body's calibration or ISO-dependent behavior. Check
 other bodies/ISO settings before declaring the model validated. No Adobe look
-tables, tone curves or profile name are copied. TIFF and the approximate embedded
-preview renderer do not use this DNG-only metadata.
+tables, tone curves or profile name are copied. The TIFF renderer retains its simple D65 path. Since build 10, the embedded DNG
+preview uses the DNG rendering metadata, with approximate As Shot CCT estimation
+for A/D65 interpolation; it does not reproduce Adobe profile look tables or tone curves.
 
 `raw_normalization` contains `source`, `decoder_white_level`, and `white_level`.
 The a7CR record uses decoder white 15360 and reference white 16383, established

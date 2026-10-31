@@ -21,8 +21,8 @@ Menu commands are registered under **Library → Plug-in Extras** only.
   (daylight, slot 2), when both exist in rawler's camera catalog. Otherwise retain
   single-D65 slot 1. Reciprocal green-normalized as-shot WB remains unchanged.
   These are catalog calibrations, not a claim of identical Adobe ARW rendering.
-  The small preview/TIFF renderer still uses D65 only; compare Lightroom Develop
-  rendering, rather than an embedded thumbnail, for the calibration test.
+  The TIFF renderer still uses D65 only. The embedded preview now follows the
+  calibrated forward-matrix path when available; see preview rendering below.
 - Optional model-profile DNG rendering metadata: reference-backed BaselineExposure,
   CameraCalibration1/2, ForwardMatrix1/2 and matching calibration signatures.
   The a7CR profile now uses +0.35 EV and the calibration measured in a Lightroom
@@ -142,8 +142,9 @@ its cached previews. Raw samples must remain bit-identical with/without this
 metadata; no ad-hoc +0.433 EV pixel gain is used. Tests check tag values with an
 independent reader and exact synthetic photometry after writing/decoding. Full
 Adobe profile behavior, real RAW normalization, additional ISOs and other camera
-bodies still require reference captures. The embedded preview/TIFF renderer is
-an approximation that does not implement Adobe's rendering/profile pipeline.
+bodies still require reference captures. Build 10 improves embedded preview
+calibration as described below; the TIFF renderer retains its original simple
+D65 conversion. Neither implements Adobe's profile look/tone pipeline.
 
 ## Reference white-scale correction (build 9)
 
@@ -162,6 +163,41 @@ BaselineExposure are unchanged. Diagnostics report both original decoder white
 and effective white. Unknown decoder white conventions are rejected instead of
 silently applying this capture's scale to an unverified variant. Real normalized
 sample parity and fresh Lightroom render comparison remain acceptance tests.
+
+## Calibrated embedded preview (build 10)
+
+For a profile with DNG rendering calibration, the bounded RGB preview now uses:
+
+1. Camera neutral from unchanged green-normalized AsShotNeutral/WB gains.
+2. Iterative white-point estimation from camera/color matrices and that neutral,
+   interpolating the A/D65 sets in reciprocal temperature. The display-only CCT
+   estimate uses McCamy's approximation, bounded to the A/D65 endpoints; it is not
+   Lightroom's exact Temp/Tint solver. Single-D65 uses its matching slot directly.
+3. The DNG forward-matrix transform, including camera calibration and reference
+   neutral WB, mapping camera RGB into XYZ D50. Analog balance is identity, matching
+   the writer's current tags. Forward matrices already include chromatic adaptation.
+4. Standard XYZ D50 to linear sRGB conversion, then `2^BaselineExposure` gain.
+5. Display clipping and the sRGB transfer function, finally RGB8 quantization.
+
+No calibration transform is applied to the main floating camera-RGB image. The
+preview is still at most 512 pixels per side and gathered from reconstructed
+strips, without rereading inputs or allocating full-size RGB. Profiles without
+rendering calibration keep the existing basic D65/WB preview. TIFF rendering
+also retains its original behavior. PreviewApplicationName/Version and
+PreviewSettingsName identify the embedded render as Calibrated or Basic As Shot.
+
+The matrix path follows [DNG specification chapter 6, pp. 100–103](https://helpx.adobe.com/content/dam/help/en/camera-raw/digital-negative/jcr_content/root/content/flex/items/position/position-par/download_section_733958301/download-1/DNG_Spec_1_7_1_0.pdf).
+The approximate CCT formula is described in [ST application note AN5638](https://www.st.com/resource/en/application_note/an5638-how-correlated-color-temperature-is-calculated-by-vd6283-stmicroelectronics.pdf).
+Tests cover analytic sRGB primaries/exposure, non-diagonal calibration, neutral
+colors, dual/single illuminants, legacy fallback and independently decoded preview
+pixels with exact preserved RAW samples. Cross-storage/strip/compression preview
+parity remains required.
+
+Fresh imports are the Lightroom acceptance test: compare Library before Develop
+loads, then Develop at As Shot / Exposure 0. Adobe Color tone curves/look tables,
+lens corrections, sharpening, user edits and cached previews remain differences;
+this renderer does not claim identical Adobe output. Regenerating an existing
+file's preview is outside this build; test a newly merged file and catalog entry.
 
 ## Streamed/compressed output acceptance
 

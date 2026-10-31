@@ -147,6 +147,10 @@ real TIFF testing has exposed Adobe profile and RAW editing limitations.
   normalization, merge and DNG output, with independent compressed-DNG reads.
   All 56 analytic cases preserve samples and mean channel brightness exactly;
   this does not validate real ARW levels or Lightroom calibration/rendering.
+- [x] Validate initial four-shot a7CR color/WB/brightness against Imaging Edge ARQ
+  under matched Lightroom settings: normalized source parity and -0.0046 EV
+  rendered median with lens corrections disabled on both. This confirms one
+  capture, not other ISOs/bodies, lens corrections, motion, detail or 16-shot mode.
 - [ ] Compare merged DNG and source ARW under matched WB, exposure and Adobe
   profile. Check neutral patches, chart colors, highlight recovery and tone.
   Initial real four-shot feedback reports a slightly darker DNG and softer detail
@@ -174,9 +178,14 @@ real TIFF testing has exposed Adobe profile and RAW editing limitations.
   checking export geometry/corrections precedes further calibration changes.
   The comparison script now reports global/patch translation probes without
   altering the measured pixels. See docs/brightness-comparison.md.
-- [ ] Improve embedded preview calibration and test Library-to-Develop consistency.
-  Current preview/TIFF rendering omits the DNG-only baseline/camera-calibration
-  metadata; Library previews can differ from the eventual Develop rendering.
+- [x] Apply calibrated As Shot WB, interpolated camera/forward matrices, D50-to-sRGB
+  conversion and baseline exposure in bounded embedded-preview rendering. Main
+  RAW samples remain untouched; no Adobe look/tone curve is approximated.
+- [ ] Validate build 10 Library-to-Develop preview behavior in Lightroom. Embedded
+  previews can still differ from Adobe Color, corrections and later Develop edits.
+- [x] Add a real-capture RAM/Disk benchmark runner with strip-wise DNG hashes,
+  preview/crop parity, engine timing/peak RSS and input checksums. Controller is
+  tested on synthetic 16-shot input; full-size a7CR measurements remain pending.
 - [ ] Inherit the reference photo's lens-correction enable preference for a
   compatible merged DNG. Initial feedback required manually enabling the
   correctly preselected lens profile. Keep this separate from copying source

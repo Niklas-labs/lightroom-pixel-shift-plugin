@@ -20,6 +20,7 @@ mod geometry;
 pub use geometry::{Crop, map_reference_crop};
 
 mod dng;
+mod preview;
 pub use dng::{DngWriter, write_dng, write_dng_from_source};
 
 mod metadata;

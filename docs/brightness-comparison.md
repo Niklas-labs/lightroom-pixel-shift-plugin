@@ -229,3 +229,15 @@ script; the original RAW-level diagnostic and installed helper need no change.
 Verify lens profile corrections, crop and Transform settings on both source
 photos in Lightroom. The initial median/heatmap remain an unaligned comparison,
 so a geometry warning is a reason to verify setup, not to adjust BaselineExposure.
+
+### Matched-correction four-shot result
+
+With lens profile corrections confirmed off on both new exports, the build 9
+comparison is -0.004593 EV median (brightness ratio 0.996821). RGB medians are
+-0.003160/-0.005022/-0.003209 EV, center/outer -0.003941/-0.004924 EV, and
+highlights +0.000133 EV. p10/p90 are -0.04555/+0.03749 EV. The user confirms a
+close visual match. This establishes practical WB/brightness parity for this
+capture under matched correction settings. No further exposure adjustment is
+justified by that result; lens-correction behavior, detail and wider camera/ISO
+acceptance remain separate tests. Build 10 improves the embedded preview using
+this verified calibration; its actual Library/Develop behavior awaits host testing.

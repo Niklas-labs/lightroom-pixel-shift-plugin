@@ -60,3 +60,9 @@ progress, cancellation and settings. Current invocation is one job per process,
 no shell-embedded input filenames; only executable and generated manifest paths
 enter the command line. Windows shell expansion characters are rejected. Keep
 Lightroom SDK calls outside the numerical engine.
+
+The DNG's bounded display preview has its own calibrated forward-matrix path:
+As Shot neutral/white-point interpolation, camera calibration, XYZ D50 to sRGB,
+and baseline exposure before display encoding. This does not alter the main
+linear payload or implement Adobe's profile look/tone pipeline. Uncalibrated
+profiles retain the basic preview fallback. See [DNG details](dng.md).

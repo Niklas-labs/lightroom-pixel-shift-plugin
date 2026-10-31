@@ -139,6 +139,38 @@ def check(engine):
             np.testing.assert_allclose(raw.asarray(),np.broadcast_to(expected,raw.shape),rtol=0,atol=1e-6)
         print('single-D65 fallback: calibration and unmodified sample checks passed')
         check_gradient_photometry(engine, root, job)
+        check_calibrated_preview(engine, root, job)
+
+
+def check_calibrated_preview(engine, root, job):
+    # A camera-neutral field must become neutral sRGB with the tagged exposure
+    # gain, while the camera-RGB main image retains its exact unbalanced values.
+    neutral = np.array([.09,.18,.12],dtype=np.float32)
+    for dual in (False,True):
+        for name in job['inputs'][:4]:
+            path=root/name
+            frame=json.loads(path.read_text())
+            frame.pop('source_crop',None)
+            w,h=frame['frame']['width'],frame['frame']['height']
+            frame['frame']['pixels']=[float(neutral[[0,1,1,2][(y%2)*2+x%2]]) for y in range(h) for x in range(w)]
+            frame['color']['white_balance']=[2,1,1.5]
+            frame['color']['xyz_to_camera_a']=[.9185,-.4857,.0505,-.3651,1.1061,.2982,-.0161,.0698,.6769] if dual else None
+            path.write_text(json.dumps(frame))
+        spec=dict(job,mode='four',inputs=job['inputs'][:4],output=f'preview-neutral-{dual}.dng')
+        path=root/'preview-job.json'
+        path.write_text(json.dumps(spec))
+        subprocess.run([str(engine),'merge','--fixtures','--job',str(path)],check=True,capture_output=True)
+        with tifffile.TiffFile(root/spec['output']) as dng:
+            raw=dng.pages[0]
+            np.testing.assert_array_equal(raw.asarray(),np.broadcast_to(neutral,raw.shape))
+            preview=raw.pages[0]
+            assert preview.tags['PreviewApplicationName'].value=='Sony Pixel Shift'
+            assert preview.tags['PreviewSettingsName'].value=='Calibrated As Shot v1'
+            level=.18*2**.35
+            expected=round((1.055*level**(1/2.4)-.055)*255)
+            assert np.max(np.abs(preview.asarray().astype(int)-expected))<=1
+            assert raw.tags['BaselineExposure'].value==(350000,1000000)
+    print('Calibrated single/dual preview: neutral/exposure match with exact untouched RAW samples')
 
 
 def check_gradient_photometry(engine, root, job):
