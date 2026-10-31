@@ -53,6 +53,13 @@ helper launched: changing quarantine will not fix that metadata error.
 
 Developer ID signing and notarized distribution are tracked in ROADMAP.md.
 
+## Compare Sony and plugin brightness
+
+For a local comparison of the same capture merged by Imaging Edge and the
+plugin, follow [the brightness comparison instructions](brightness-comparison.md).
+Export both through Lightroom; the diagnostic reads a bounded sampling grid and
+produces a small JSON report and preview without uploading the originals.
+
 ## First merge
 
 Start with a complete **four-shot Sony a7CR Pixel Shift** capture. Select the
