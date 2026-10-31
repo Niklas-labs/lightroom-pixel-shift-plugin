@@ -200,7 +200,7 @@ def notarize(binary, directory, runner=run):
         record = json.loads(output)
         if record.get('status') != 'Accepted':
             raise SigningError('Apple did not accept the notarization submission; publication stopped')
-        # Retain only nonsecret acceptance evidence outside the credential directory.
+        # Emit only nonsecret acceptance evidence for the packaging gate.
         return {'status': 'Accepted', 'id': str(uuid.UUID(record['id'])),
                 'engine_sha256': hashlib.sha256(binary.read_bytes()).hexdigest()}
     finally:

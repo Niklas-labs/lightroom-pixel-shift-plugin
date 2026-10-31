@@ -85,10 +85,10 @@ jobs:
         run: python scripts/ci_signing.py sign --binary target/universal/sony-pixelshift
       - name: Require Apple notarization acceptance
         if: vars.MACOS_SIGNING_ENABLED == 'true'
-        run: python scripts/ci_signing.py notarize --binary target/universal/sony-pixelshift --receipt target/notarization-receipt.json
+        run: python scripts/ci_signing.py notarize --binary target/universal/sony-pixelshift --receipt "$RUNNER_TEMP/pixelshift-signing/notarization-receipt.json"
       - name: Package signed and notarized plugin
         if: vars.MACOS_SIGNING_ENABLED == 'true'
-        run: python scripts/package-plugin.py --binary target/universal/sony-pixelshift --platform macos-universal --revision '${{ github.sha }}' --macos-signing developer-id --notarization-receipt target/notarization-receipt.json
+        run: python scripts/package-plugin.py --binary target/universal/sony-pixelshift --platform macos-universal --revision '${{ github.sha }}' --macos-signing developer-id --notarization-receipt "$RUNNER_TEMP/pixelshift-signing/notarization-receipt.json"
       - name: Package ad-hoc development build
         if: vars.MACOS_SIGNING_ENABLED != 'true'
         run: |

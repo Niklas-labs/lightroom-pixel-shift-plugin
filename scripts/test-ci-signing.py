@@ -186,6 +186,12 @@ class SigningTests(unittest.TestCase):
                 self.assertEqual(signed[0]['if'], "vars.MACOS_SIGNING_ENABLED == 'true'")
                 cleanup=[s for s in job['steps'] if 'run' in s and 'ci_signing.py cleanup' in s['run']]
                 self.assertEqual(cleanup[0]['if'],'always()')
+                for step in job['steps']:
+                    command=step.get('run','')
+                    if '--receipt ' in command or '--notarization-receipt ' in command:
+                        self.assertIn('$RUNNER_TEMP/pixelshift-signing/notarization-receipt.json',command)
+                        self.assertNotIn('target/notarization-receipt',command)
+
             else:
                 self.assertNotEqual(job.get('permissions',{}).get('id-token'),'write')
 
