@@ -200,3 +200,32 @@ remain 15360, `source.white` should be 16383, and confirmed normalized EV should
 be near zero. Then make a fresh Lightroom merge at As Shot/Exposure 0 and repeat
 the TIFF comparison. This confirms real output behavior rather than assuming
 that a correct denominator guarantees identical Adobe rendering.
+
+### Build 9 sensor parity verified; rendered comparison needs geometry checks
+
+The next private report confirms original decoder white 15360, effective white
+16383 and black 512 on all phases, with unique zero-offset correspondence.
+Median normalized plugin-vs-Adobe difference is 1.4e-9 EV; per-phase gains are 1
+to float precision. This validates normalization for the sampled capture.
+
+The new rendered TIFF pair has median -0.0784 EV, but p10/p90 span -0.5302 to
++0.2968 EV, and center/outer medians differ (-0.0205/-0.1206 EV). The usable mask
+also drops from 146132 to 78323 pixels. This is not evidence of a uniform RAW
+exposure offset: geometry/corrections, processing and comparison correspondence
+need checking before further calibration changes. Matching dimensions and ICC
+profiles do not establish identical crop/lens transformations.
+
+The updated comparison script (report version 3) adds a read-only geometry probe:
+phase correlation of edge features on a bounded grid, globally and in overlapping
+patches. It estimates translations with texture/confidence checks, reports
+full-image pixel displacements, and never warps or aligns photometric samples.
+Flat/unrelated images return inconclusive; a negative check cannot rule out small
+shifts, nonlinear distortion, or sampling aliasing. Use it to identify a suspect
+comparison, not as proof of identical rendering geometry. The report also includes
+hashes of the sampled RGB arrays to identify changed exports across later runs.
+
+Rerun `compare-lightroom.py` on the existing TIFFs after downloading the updated
+script; the original RAW-level diagnostic and installed helper need no change.
+Verify lens profile corrections, crop and Transform settings on both source
+photos in Lightroom. The initial median/heatmap remain an unaligned comparison,
+so a geometry warning is a reason to verify setup, not to adjust BaselineExposure.

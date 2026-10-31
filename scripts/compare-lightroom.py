@@ -95,6 +95,73 @@ def measure(reference, candidate):
     return result, ev, mask
 
 
+def translation_probe(reference, candidate):
+    """Diagnostic phase correlation on edge features; never resample input pixels."""
+    h, w = reference.shape
+    if min(h, w) < 24:
+        return None
+    def edges(image):
+        gy, gx = np.gradient(image.astype(np.float64))
+        return np.hypot(gx, gy)
+    a, b = edges(reference), edges(candidate)
+    if min(float(a.std()), float(b.std())) < 1e-5:
+        return None
+    window = np.outer(np.hanning(h), np.hanning(w))
+    fa, fb = [np.fft.rfft2((v-v.mean())*window) for v in (a, b)]
+    cross = fa*np.conj(fb)
+    cross /= np.maximum(np.abs(cross), 1e-12)
+    correlation = np.fft.irfft2(cross, s=(h, w))
+    py, px = np.unravel_index(np.argmax(correlation), correlation.shape)
+    peak = float(correlation[py, px])
+    psr = (peak-float(correlation.mean()))/max(float(correlation.std()), 1e-12)
+    def refined(index, size, left, center, right):
+        denominator = left-2*center+right
+        fraction = .5*(left-right)/denominator if abs(denominator) > 1e-12 else 0.
+        return float(index if index <= size//2 else index-size)+float(np.clip(fraction, -.5, .5))
+    sx = refined(px,w,correlation[py,(px-1)%w],peak,correlation[py,(px+1)%w])
+    sy = refined(py,h,correlation[(py-1)%h,px],peak,correlation[(py+1)%h,px])
+    dx, dy = -int(round(sx)), -int(round(sy))
+    if abs(dx) > w//4 or abs(dy) > h//4:
+        return None
+    ax, bx = max(0,-dx), max(0,dx)
+    ay, by = max(0,-dy), max(0,dy)
+    width, height = w-abs(dx), h-abs(dy)
+    va = a[ay:ay+height,ax:ax+width].ravel()
+    vb = b[by:by+height,bx:bx+width].ravel()
+    if min(float(va.std()), float(vb.std())) < 1e-5:
+        return None
+    ncc = float(np.corrcoef(va,vb)[0,1])
+    return dict(candidate_displacement=[-sx,-sy], edge_correlation=ncc,
+                peak_sigma=psr, reliable=bool(ncc >= .8 and psr >= 8))
+
+
+def geometry_check(reference, candidate, sampling_step):
+    # Bound FFT workspaces independently of full-resolution TIFF dimensions.
+    stride = max(1,(max(reference.shape[:2])+511)//512)
+    weights = np.array([.2126,.7152,.0722])
+    a, b = [v[::stride,::stride] @ weights for v in (reference,candidate)]
+    unit = stride*sampling_step
+    h, w = a.shape
+    probes = []
+    global_probe = translation_probe(a,b)
+    if global_probe:
+        global_probe['candidate_displacement_full_pixels'] = [v*unit for v in global_probe['candidate_displacement']]
+    ph, pw = h//2, w//2
+    for y in sorted(set([0,(h-ph)//2,h-ph])):
+        for x in sorted(set([0,(w-pw)//2,w-pw])):
+            probe = translation_probe(a[y:y+ph,x:x+pw],b[y:y+ph,x:x+pw])
+            if probe:
+                probe.update(center_fraction=[(x+pw/2)/w,(y+ph/2)/h],
+                             candidate_displacement_full_pixels=[v*unit for v in probe['candidate_displacement']])
+                probes.append(probe)
+    reliable = [p for p in probes if p['reliable']]
+    tested = reliable+([global_probe] if global_probe and global_probe['reliable'] else [])
+    shifted = any(np.hypot(*p['candidate_displacement']) > .5 for p in tested)
+    status = 'geometry_difference_detected' if shifted else 'no_large_shift_detected' if len(reliable)>=3 and global_probe and global_probe['reliable'] else 'inconclusive'
+    return dict(status=status, geometry_sampling_step=unit, global_probe=global_probe, patches=probes,
+                caveat='Translation probes only; no alignment applied. Sampling can alias fine detail. Small shifts, lens warps, crops and transforms are not ruled out by a negative check.')
+
+
 def dng_metadata(path):
     # Whitelist calibration tags only: do not copy private MakerNotes, GPS or XMP.
     names = ['Make', 'Model', 'UniqueCameraModel', 'DNGVersion', 'BlackLevel',
@@ -200,11 +267,14 @@ def main():
         a = sony[::step, ::step].astype(np.float32)/65535
         b = plugin[::step, ::step].astype(np.float32)/65535
         result, ev, mask = measure(a, b)
-        report = dict(version=1, reference=sony_info, candidate=plugin_info,
+        geometry = geometry_check(a,b,step)
+        for info, image in [(sony_info,a),(plugin_info,b)]:
+            info['sampled_rgb_sha256'] = hashlib.sha256(image.astype('<f4').tobytes()).hexdigest()
+        report = dict(version=3, reference=sony_info, candidate=plugin_info,
                       sampling_step=step, ev_sign='negative means plugin darker',
                       method='sRGB linearized; paired uniform samples; smooth nonclipped midrange mask; no automatic alignment',
                       limitations='Rendered-light EV differences, not inferred RAW exposure. Small registration differences and Adobe rendering can affect results.',
-                      measurements=result)
+                      measurements=result, geometry_check=geometry)
         if args.dng:
             report['plugin_dng_calibration'] = dng_metadata(args.dng)
         if args.reference_dng:
@@ -218,6 +288,7 @@ def main():
         else:
             median = result['luminance_ev']['median']
             print(f'Plugin vs Sony: {median:+.4f} EV; ratio {2**median:.4f}; {result["usable_smooth_pixels"]} usable samples')
+        print(f'Geometry check: {geometry["status"]} (no alignment applied)')
         print(f'Share {destination} and {args.out / "comparison.png"}; originals stay local.')
     except (ValueError, OSError, tifffile.TiffFileError) as exc:
         parser.exit(2, f'Comparison failed: {exc}\n')

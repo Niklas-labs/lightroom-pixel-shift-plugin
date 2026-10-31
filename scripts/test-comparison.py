@@ -76,6 +76,30 @@ class ComparisonTests(unittest.TestCase):
             self.assertEqual(run.returncode, 2)
             self.assertIn('dimensions differ', run.stderr)
 
+    def test_geometry_translation_is_detected_without_aligning_photometry(self):
+        image = np.random.default_rng(7).uniform(.1,.7,(192,256))
+        for _ in range(3):
+            for axis in (0,1):
+                image = (.25*np.roll(image,-1,axis)+.5*image+.25*np.roll(image,1,axis))
+        rgb = np.repeat(image[...,None],3,axis=2)
+        shifted = np.roll(rgb,(-2,3),axis=(0,1))*.9
+        original = shifted.copy()
+        report = comparison.geometry_check(rgb,shifted,10)
+        self.assertEqual(report['status'],'geometry_difference_detected')
+        dx,dy = report['global_probe']['candidate_displacement_full_pixels']
+        self.assertAlmostEqual(dx,30,delta=1)
+        self.assertAlmostEqual(dy,-20,delta=1)
+        np.testing.assert_array_equal(shifted,original)
+        report = comparison.geometry_check(rgb,rgb*.9,10)
+        self.assertEqual(report['status'],'no_large_shift_detected')
+
+    def test_geometry_flat_or_unrelated_images_are_inconclusive(self):
+        constant = np.full((128,128,3),.5)
+        self.assertEqual(comparison.geometry_check(constant,constant,1)['status'],'inconclusive')
+        rng = np.random.default_rng(21)
+        a,b = rng.uniform(.1,.7,(2,128,128,3))
+        self.assertEqual(comparison.geometry_check(a,b,1)['status'],'inconclusive')
+
     def test_calibration_subifd_inheritance_without_decoding_pixels(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)/'reference.dng'
