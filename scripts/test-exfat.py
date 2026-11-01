@@ -43,8 +43,8 @@ def check(engine):
         mount = root / 'exFAT volume'
         mount.mkdir()
         # Create an unformatted image, then explicitly format ONLY the attached
-        # image device. hdiutil's implicit exFAT formatter is not permitted on
-        # some hosted macOS runners; sudo newfs_exfat provides the required access.
+        # image device. Explicit formatting surfaces useful errors instead of
+        # hdiutil's generic failure. Keep the label within exFAT's 11-character limit.
         disk_command(['hdiutil', 'create', '-size', '512m', '-layout', 'NONE', str(image)])
         device = None
         try:
@@ -54,7 +54,7 @@ def check(engine):
             if len(devices) != 1:
                 raise AssertionError(f'Expected one whole temporary image device: {attached!r}')
             device = devices[0]
-            disk_command(['sudo', '-n', '/sbin/newfs_exfat', '-v', 'PixelShiftExFAT', device])
+            disk_command(['sudo', '-n', '/sbin/newfs_exfat', '-v', 'PXSHIFT', device])
             status = plistlib.loads(subprocess.check_output(['diskutil', 'info', '-plist', device]))
             if status.get('Mounted'):
                 disk_command(['diskutil', 'unmount', device])
