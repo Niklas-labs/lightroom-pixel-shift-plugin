@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 import plistlib
+import re
 import subprocess
 import sys
 import tempfile
@@ -30,7 +31,8 @@ def run_engine(engine, spec, job):
 def check(engine):
     if sys.platform != 'darwin':
         raise RuntimeError('This integration check requires macOS and hdiutil')
-    with tempfile.TemporaryDirectory(prefix='pixelshift exFAT test ') as directory:
+    (ROOT / 'target').mkdir(exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix='pixelshift exFAT test ', dir=ROOT / 'target') as directory:
         root = Path(directory)
         fixtures = root / 'fixtures'
         subprocess.run([sys.executable, str(ROOT / 'scripts/generate-demo.py'), str(fixtures)],
@@ -40,14 +42,23 @@ def check(engine):
         image = root / 'test.dmg'
         mount = root / 'exFAT volume'
         mount.mkdir()
-        # Avoid a default partition layout consuming the small test image, and
-        # leave enough space for exFAT's minimum formatting requirements.
-        disk_command(['hdiutil', 'create', '-size', '512m', '-layout', 'NONE',
-                      '-fs', 'ExFAT', '-volname', 'PixelShiftExFAT', str(image)])
-        attached = False
+        # Create an unformatted image, then explicitly format ONLY the attached
+        # image device. hdiutil's implicit exFAT formatter is not permitted on
+        # some hosted macOS runners; sudo newfs_exfat provides the required access.
+        disk_command(['hdiutil', 'create', '-size', '512m', '-layout', 'NONE', str(image)])
+        device = None
         try:
-            disk_command(['hdiutil', 'attach', '-nobrowse', '-mountpoint', str(mount), str(image)])
-            attached = True
+            attached = plistlib.loads(disk_command(['hdiutil', 'attach', '-nomount', '-plist', str(image)]).stdout.encode())
+            devices = [item['dev-entry'] for item in attached['system-entities']
+                       if re.fullmatch(r'/dev/disk[1-9][0-9]*', item.get('dev-entry', ''))]
+            if len(devices) != 1:
+                raise AssertionError(f'Expected one whole temporary image device: {attached!r}')
+            device = devices[0]
+            disk_command(['sudo', '-n', '/sbin/newfs_exfat', '-v', 'PixelShiftExFAT', device])
+            status = plistlib.loads(subprocess.check_output(['diskutil', 'info', '-plist', device]))
+            if status.get('Mounted'):
+                disk_command(['diskutil', 'unmount', device])
+            disk_command(['diskutil', 'mount', '-mountPoint', str(mount), device])
             info = plistlib.loads(subprocess.check_output(['diskutil', 'info', '-plist', str(mount)]))
             assert str(info.get('FilesystemType', '')).lower() == 'exfat', info
             for mode in ('four', 'sixteen'):
@@ -86,8 +97,8 @@ def check(engine):
                         assert Path(baseline['output']).read_bytes() == expected
                         print(f'exFAT {mode}/{extension}/{storage}: {publication}; diagnostics, exact bytes, no overwrite and cleanup passed', flush=True)
         finally:
-            if attached or mount.is_mount():
-                disk_command(['hdiutil', 'detach', str(mount)])
+            if device:
+                disk_command(['hdiutil', 'detach', device])
 
 
 if __name__ == '__main__':
