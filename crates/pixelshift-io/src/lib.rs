@@ -9,6 +9,9 @@ use std::{
 };
 use tiff::encoder::TiffEncoder;
 
+mod merge_diagnostics;
+pub use merge_diagnostics::MergeDiagnostics;
+
 mod diagnostics;
 pub use diagnostics::inspect_sensor_samples;
 mod store;

@@ -280,3 +280,59 @@ fn output_region_bounds_are_checked() {
         assert!(plan.read_region(region).is_err());
     }
 }
+
+#[test]
+fn diagnostic_mask_matches_fallback_without_changing_rgb() {
+    for mode in [Mode::Four, Mode::Sixteen, Mode::Denoise] {
+        let mut frames = frames(mode);
+        // Inject a local disagreement while leaving most of the scene stationary.
+        for y in 13..19 {
+            for x in 15..21 {
+                frames[1].pixels[y * 40 + x] += 0.7;
+            }
+        }
+        for threshold in [0., 0.2] {
+            let mut options = options(mode);
+            options.motion_threshold = threshold;
+            let prepared = PreparedMerge::new(&frames, &SonyA7Cr, &options).unwrap();
+            let (width, height) = prepared.dimensions();
+            let whole = prepared
+                .read_region_with_mask(Region {
+                    x: 0,
+                    y: 0,
+                    width,
+                    height,
+                })
+                .unwrap();
+            let mask = whole.fallback_mask.as_ref().unwrap();
+            assert_eq!(
+                whole.fallback_pixels,
+                mask.iter().filter(|v| **v == 255).count()
+            );
+            if threshold > 0. {
+                assert!(whole.fallback_pixels > 0 && whole.fallback_pixels < width * height);
+            } else {
+                assert_eq!(whole.fallback_pixels, 0);
+            }
+            let mut band_mask = vec![];
+            let mut band_rgb = vec![];
+            for y in (0..height).step_by(7) {
+                let region = Region {
+                    x: 0,
+                    y,
+                    width,
+                    height: 7.min(height - y),
+                };
+                let ordinary = prepared.read_region(region).unwrap();
+                let diagnostic = prepared.read_region_with_mask(region).unwrap();
+                assert!(ordinary.fallback_mask.is_none());
+                assert_eq!(ordinary.image.rgb, diagnostic.image.rgb);
+                assert_eq!(ordinary.fallback_pixels, diagnostic.fallback_pixels);
+                band_mask.extend(diagnostic.fallback_mask.unwrap());
+                band_rgb.extend(diagnostic.image.rgb);
+            }
+            assert_eq!(band_mask, *mask);
+            assert_eq!(band_rgb, whole.image.rgb);
+        }
+    }
+}

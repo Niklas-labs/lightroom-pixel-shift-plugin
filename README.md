@@ -36,6 +36,27 @@ compatibility need Lightroom host testing. Output reconstruction and source norm
 Lossless Deflate compression is now the default. Uncompressed equivalents are
 about 0.73 GB at 61 MP or 2.9 GB at 244 MP; compressed size depends on content.
 
+Enable **Save merge diagnostics** to save a `<output>.diagnostics` folder beside
+the DNG. It contains a full-resolution `reference-fallback.tif` mask (white =
+reference fallback, black = multi-frame reconstruction), a small `overlay.tif`
+preview (red = fallback), and `summary.json` with counts and alignment offsets.
+The completion dialog offers **Open diagnostics** to reveal the files in Finder
+or Explorer. These files are not imported into Lightroom. The option is off by
+default and remembered after a merge. CLI jobs can set `"save_diagnostics": true`.
+
+Fallback means frame disagreement exceeded the threshold; noise, fine detail and
+lighting changes can trigger it as well as motion. In 16-shot mode these areas
+use interpolated first-frame content on the larger output grid. The overlay
+marks a preview cell if any pixel in it used fallback; inspect the full mask for
+exact boundaries. Both TIFFs carry the output orientation and use the DNG's
+visible crop. The overlay is an approximate As Shot preview, not a Lightroom
+Develop rendering. Diagnostics stream with the output and do not change its
+image data. Mask storage uses compressed strips; memory holds one output band,
+a 32-row mask buffer, strip offsets and a preview of at most 512 pixels per side.
+Existing diagnostic folders are never replaced. If final publication of sidecars
+fails after the DNG is saved, the error identifies the saved DNG for manual import.
+
+
 ## Build and run
 
 Install stable Rust, then:

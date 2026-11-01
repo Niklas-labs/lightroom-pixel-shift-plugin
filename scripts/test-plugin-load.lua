@@ -15,7 +15,7 @@ local tasks = {startAsyncTask=function(fn) queued[#queued+1]=fn end}
 -- SDK namespaces are explicit: unknown imports must fail like Lightroom.
 -- Object types such as LrObservableTable are not importable namespaces.
 local sdk = {
-    LrApplication={}, LrDialogs={}, LrFileUtils={}, LrFunctionContext={},
+    LrShell={}, LrApplication={}, LrDialogs={}, LrFileUtils={}, LrFunctionContext={},
     LrPathUtils={}, LrPrefs={}, LrView={}, LrBinding={},
     LrTasks=tasks, LrProgressScope=function() return scope end,
 }

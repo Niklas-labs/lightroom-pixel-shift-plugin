@@ -45,7 +45,7 @@ local ok, problem = pcall(function()
     write(base .. '/plugin/bin/sony-pixelshift', 'mock executable')
     write(base .. '/plugin/manifest.json', '{"protocol_version":1,"engine_version":"0.1.0"}')
     for i=1,16 do write(base .. '/DSC' .. string.format('%05d', i) .. '.ARW', 'mock raw') end
-    for _, scenario in ipairs({'success', 'disk', 'saved-ram', 'saved-disk', 'invalid-memory', 'sixteen', 'denoise', 'options-cancel', 'filtered-selection', 'selection-error', 'unconfirmed-import', 'engine-failure', 'execute-error', 'launch-failure', 'bad-handshake', 'import-failure', 'catalog-timeout', 'wrong-output'}) do
+    for _, scenario in ipairs({'diagnostics-open-error', 'diagnostics-bad-path', 'diagnostics-open', 'diagnostics-close', 'diagnostics-saved', 'diagnostics-invalid-pref', 'success', 'disk', 'saved-ram', 'saved-disk', 'invalid-memory', 'sixteen', 'denoise', 'options-cancel', 'filtered-selection', 'selection-error', 'unconfirmed-import', 'engine-failure', 'execute-error', 'launch-failure', 'bad-handshake', 'import-failure', 'catalog-timeout', 'wrong-output'}) do
         local state = {imports={},dialogs={},commands={}, registry={}, queue={}, captions={}}
         local denoise = scenario == 'denoise'
         local count = scenario == 'sixteen' and 16 or 4
@@ -54,6 +54,9 @@ local ok, problem = pcall(function()
         if scenario == 'saved-ram' then preferences.sourceStorage = 'ram'
         elseif scenario == 'saved-disk' then preferences.sourceStorage = 'disk'
         elseif scenario == 'invalid-memory' then preferences.sourceStorage = 'unknown-value' end
+        if scenario == 'diagnostics-saved' then preferences.saveMergeDiagnostics=true end
+        if scenario == 'diagnostics-invalid-pref' then preferences.saveMergeDiagnostics='yes' end
+        local diagnosticsEnabled = scenario == 'diagnostics-open' or scenario == 'diagnostics-close' or scenario == 'diagnostics-saved' or scenario == 'diagnostics-open-error' or scenario == 'diagnostics-bad-path'
         local expectedInitial = scenario == 'saved-disk' and 'disk' or 'ram'
         local expectedStorage = (scenario == 'disk' or scenario == 'saved-disk') and 'disk' or 'ram'
         local function photo(path) return {getRawMetadata=function(_, key) assert(key == 'path'); return path end} end
@@ -90,6 +93,7 @@ local ok, problem = pcall(function()
         function catalog:setViewFilter() error('Library filters must be preserved') end
         function catalog:setActiveSources() error('Library sources must be preserved') end
         local sdk = {
+            LrShell={revealInShell=function(path) state.revealed=path; if scenario == 'diagnostics-open-error' then error('Finder unavailable') end end},
             LrApplication={activeCatalog=function() return catalog end},
             LrProgressScope=function(options)
                 assert(state.context and options.functionContext == state.contextObject)
@@ -123,6 +127,7 @@ local ok, problem = pcall(function()
             end,osFactory=function() return {
                 control_spacing=function() return 8 end,
                 static_text=function(_,t) return t end,
+                checkbox=function(_,t) state.checkbox=t; return t end,
                 row=function(_,t) return t end,
                 column=function(_,t) return t end,
                 popup_menu=function(_,t)
@@ -131,6 +136,11 @@ local ok, problem = pcall(function()
                 end,
             } end},
             LrDialogs={presentModalDialog=function(options)
+                if options.actionVerb == 'Open diagnostics' then
+                    assert(state.scope.ended)
+                    state.dialogs[#state.dialogs+1]={title=options.title,message=options.contents[1].title,severity='info'}
+                    return scenario == 'diagnostics-close' and 'cancel' or 'ok'
+                end
                 state.options = options
                 -- Resolve the documented binding object, rather than assuming
                 -- a made-up parent property establishes a usable binding.
@@ -145,6 +155,11 @@ local ok, problem = pcall(function()
                 assert(initial == expectedInitial, 'Memory popup has no valid initial selection')
                 assert(title == (expectedInitial == 'disk' and 'Disk (less RAM)' or 'RAM'), 'Memory popup is blank')
                 assert(object == state.properties, 'Popup must read and write the workflow settings')
+                local cb = assert(state.checkbox)
+                assert(cb.title == 'Save merge diagnostics')
+                assert(cb.value.bind_to_object == object)
+                assert(object[cb.value.key] == (scenario == 'diagnostics-saved'))
+                if diagnosticsEnabled then object[cb.value.key]=true end
                 if scenario == 'disk' then object[binding.key] = 'disk' end
                 assert(options.contents[2].title:find(denoise and 'Less noise' or (count == 16 and 'Higher resolution' or 'Better color detail'), 1, true))
                 return scenario == 'options-cancel' and 'cancel' or 'ok'
@@ -179,13 +194,13 @@ local ok, problem = pcall(function()
                         if scenario == 'launch-failure' then return 126 end
                         local path=assert(command:match("'%-?%-output' '([^']+)'"))
                         write(path, '{"protocol_version":1,"engine_version":"' ..
-                            (scenario == 'bad-handshake' and '9.0' or '0.1.0') .. '","camera_models":["ILCE-7CR"],"autodetection":true,"output_formats":["dng","tiff"],"source_storages":["ram","disk"],"streamed_output":true,"output_compressions":["lossless","none"]}')
+                            (scenario == 'bad-handshake' and '9.0' or '0.1.0') .. '","camera_models":["ILCE-7CR"],"autodetection":true,"output_formats":["dng","tiff"],"source_storages":["ram","disk"],"streamed_output":true,"merge_diagnostics":true,"output_compressions":["lossless","none"]}')
                         return 0
                     end
                     state.job=assert(command:match("'%-%-job' '([^']+)'"))
                     state.result=assert(command:match("'%-%-result' '([^']+)'"))
                     state.log=assert(command:match("'%-%-log' '([^']+)'"))
-                    local job=Json.decode(read(state.job)); assert(job.source_storage == expectedStorage); assert(job.mode == (denoise and 'denoise' or 'auto') and job.camera == 'auto'); assert(job.inputs[1] == base .. '/DSC00001.ARW')
+                    local job=Json.decode(read(state.job)); assert(job.save_diagnostics == (diagnosticsEnabled and true or nil)); assert(job.source_storage == expectedStorage); assert(job.mode == (denoise and 'denoise' or 'auto') and job.camera == 'auto'); assert(job.inputs[1] == base .. '/DSC00001.ARW')
                     if scenario == 'execute-error' then error('process launch raised an exception') end
                     state.inExecute = true
                     for i=1,count do
@@ -206,8 +221,20 @@ local ok, problem = pcall(function()
                     append(state.log, 'output region 2/2\n')
                     coroutine.yield()
                     write(output, 'mock DNG')
+                    local diagnosticJson = ''
+                    if diagnosticsEnabled then
+                        local directory = output .. '.diagnostics'
+                        assert(os.execute('mkdir -p ' .. Protocol.quote(directory,false)) == 0)
+                        local fields = {'"directory":' .. Protocol.jsonString(directory)}
+                        for key,name in pairs {mask='reference-fallback.tif',overlay='overlay.tif',summary='summary.json'} do
+                            local path=directory .. '/' .. name
+                            write(path,'mock diagnostic')
+                            fields[#fields+1]=Protocol.jsonString(key) .. ':' .. Protocol.jsonString(scenario == 'diagnostics-bad-path' and path .. '.wrong' or path)
+                        end
+                        diagnosticJson=',"merge_diagnostics":{' .. table.concat(fields,',') .. '}'
+                    end
                     write(state.result, '{"version":1,"status":"complete","output":' ..
-                        Protocol.jsonString(scenario == 'wrong-output' and output .. '.wrong' or output) .. '}')
+                        Protocol.jsonString(scenario == 'wrong-output' and output .. '.wrong' or output) .. diagnosticJson .. '}')
                     append(state.log, 'complete in 1.0s; 0 pixels used reference fallback\n')
                     state.inExecute=false
                     return 0
@@ -226,13 +253,17 @@ local ok, problem = pcall(function()
             assert(state.scope.ended and state.scope.closeCount == 1)
             assert(preferences.sourceStorage == expectedStorage, 'Memory choice was not persisted')
         end
-        if scenario == 'success' or scenario == 'disk' or scenario == 'saved-ram' or scenario == 'saved-disk' or scenario == 'invalid-memory' or scenario == 'sixteen' or scenario == 'denoise' or scenario == 'filtered-selection' or scenario == 'selection-error' then
+        if (diagnosticsEnabled and scenario ~= 'diagnostics-bad-path') or scenario == 'diagnostics-invalid-pref' or scenario == 'success' or scenario == 'disk' or scenario == 'saved-ram' or scenario == 'saved-disk' or scenario == 'invalid-memory' or scenario == 'sixteen' or scenario == 'denoise' or scenario == 'filtered-selection' or scenario == 'selection-error' then
             local seen = {}
             for _, update in ipairs(state.captions) do
                 if update.duringExecute then seen[update.text]=true end
             end
             assert(seen['Decoding RAW 1 of ' .. count] and seen['Aligning and merging'] and seen['Writing DNG'] and seen['Combining and saving 2 of 2'], 'No live progress during execution')
             assert(#state.imports == 1 and state.imports[1] == output)
+            assert(preferences.saveMergeDiagnostics == diagnosticsEnabled)
+            if diagnosticsEnabled and scenario ~= 'diagnostics-close' then
+                assert(state.revealed == output .. '.diagnostics/overlay.tif')
+            else assert(not state.revealed) end
             assert(not exists(state.job) and not exists(state.result))
             assert(exists(state.log) == 'file')
             assert(state.dialogs[1].severity == 'info')
@@ -271,4 +302,4 @@ local ok, problem = pcall(function()
 end)
 cleanup()
 assert(ok, problem)
-print('Plugin mocked workflow checks passed (18 scenarios, with cooperative engine/progress scheduling)')
+print('Plugin mocked workflow checks passed (24 scenarios, with cooperative engine/progress scheduling)')

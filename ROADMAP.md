@@ -225,6 +225,14 @@ roundtrips and bounded memory. A renamed TIFF is not DNG support.
 
 ## 6. Improve motion correction and reconstruction together
 
+- [x] Optional **Save merge diagnostics** in Lightroom and CLI: stream a cropped,
+  oriented reference-fallback mask, bounded red overlay and JSON summary beside
+  the output, with a completion action to reveal files. No automatic sidecar
+  import. Describe disagreement rather than claiming all flagged pixels moved.
+- [ ] Validate diagnostics against a real 4-shot and 16-shot capture in Lightroom,
+  including portrait orientation and visible fallback boundaries.
+
+
 - [ ] Estimate subpixel global translation on alias-suppressed guide pyramids;
   evaluate affine correction only if real captures justify it.
 - [ ] Replace exact-grid sample selection with CFA-aware reconstruction of warped

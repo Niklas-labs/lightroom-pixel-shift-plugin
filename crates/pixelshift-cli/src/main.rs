@@ -72,6 +72,8 @@ enum Commands {
 struct Job {
     version: u32,
     #[serde(default)]
+    save_diagnostics: bool,
+    #[serde(default)]
     camera: Option<String>,
     #[serde(default)]
     mode: Option<String>,
@@ -147,6 +149,7 @@ fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
             "output_formats": ["dng", "tiff"],
             "output_compressions":["lossless","none"],
             "streamed_output":true,
+            "merge_diagnostics":true,
             "source_storage":"packed_u16_ram",
             "source_storages":["ram","disk"],
             "experimental": true,
@@ -432,6 +435,20 @@ fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
                 Some((image, _)) => image,
                 None => &prepared,
             };
+            ensure!(
+                !(spec.save_diagnostics && *reference),
+                "merge diagnostics require streamed reconstruction"
+            );
+            let merge_diagnostics = if spec.save_diagnostics {
+                Some(pixelshift_io::MergeDiagnostics::new(
+                    source, &output, &color,
+                )?)
+            } else {
+                None
+            };
+            let source: &dyn ImageSource = merge_diagnostics
+                .as_ref()
+                .map_or(source, |v| v as &dyn ImageSource);
             diagnostics.record(format!(
                 "writing {}x{} {}",
                 width,
@@ -474,6 +491,12 @@ fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
                 Some((_, report)) => prepared.report(report.fallback_pixels),
                 None => prepared.report(output_stats.fallback_pixels),
             };
+            let merge_diagnostics_result = merge_diagnostics.map(|v| v.publish(json!({
+                "mode":mode,"motion_threshold":spec.motion_threshold,"residual_shifts":report.residual_shifts
+            }))).transpose().with_context(|| format!("DNG saved at {}; writing merge diagnostics failed", output.display()))?;
+            if let Some(paths) = &merge_diagnostics_result {
+                diagnostics.record(format!("merge diagnostics: {}", paths["directory"]))?;
+            }
             let peak_source_region_bytes = prepared.peak_source_region_bytes();
             drop(reference_result);
             drop(prepared);
@@ -517,7 +540,7 @@ fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
                 report.fallback_pixels
             ))?;
             Ok(
-                json!({"version":PROTOCOL_VERSION,"status":"complete","output":output,"report":report,"execution":execution,"detected":{"camera":camera,"mode":mode,"source_count":required}}),
+                json!({"version":PROTOCOL_VERSION,"status":"complete","output":output,"report":report,"execution":execution,"merge_diagnostics":merge_diagnostics_result,"detected":{"camera":camera,"mode":mode,"source_count":required}}),
             )
         }
     }

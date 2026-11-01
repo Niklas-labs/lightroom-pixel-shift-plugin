@@ -168,3 +168,26 @@ parity, not Lightroom host behavior. Keep the performance log: it now records
 stage timings, source/region allocation sizes, output bytes and OS peak memory.
 The loader/restart check from the earlier build is still pending; install with
 Lightroom fully closed and verify the registered plugin path.
+
+
+### Optional merge diagnostics (build 11)
+
+1. Leave **Save merge diagnostics** unchecked and merge: only the usual DNG,
+   job/result cleanup and persistent log should appear.
+2. Check it and merge the same inputs. Confirm **Open diagnostics** reveals the
+   overlay in Finder/Explorer, and only the DNG is imported into the catalog.
+3. Open `overlay.tif` and `reference-fallback.tif` from the sibling
+   `<output>.diagnostics` folder. Red overlay cells indicate at least one fallback
+   pixel; white full-resolution mask pixels identify exact fallback locations.
+   Check registration with the DNG's visible crop, including portrait captures.
+4. Inspect `summary.json`: counts refer to the visible crop, so they can be lower
+   than the engine log's full-buffer fallback count. Alignment offsets and the
+   configured disagreement threshold are recorded under `context`.
+5. Repeat with 16 shots and both RAM/Disk settings. Fallback pixels are still on
+   the 2x output grid but contain interpolated first-frame detail. Do not treat
+   the mask as ground-truth motion segmentation.
+6. Confirm the checkbox is remembered. **Close** dismisses the result without
+   opening diagnostics. A Finder/Explorer error must not undo a successful import.
+
+The overlay uses the engine's approximate As Shot preview rendering. Compare
+fine detail and brightness in Lightroom Develop, not against the overlay.

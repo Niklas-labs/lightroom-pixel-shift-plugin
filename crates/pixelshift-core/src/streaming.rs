@@ -23,11 +23,16 @@ impl Region {
 pub struct RenderedRegion {
     pub image: Image,
     pub fallback_pixels: usize,
+    /// Opt-in mask: 255 means reference fallback, 0 means multi-frame reconstruction.
+    pub fallback_mask: Option<Vec<u8>>,
 }
 /// Pull-based output boundary. A writer controls how many regions are resident.
 pub trait ImageSource: Sync {
     fn dimensions(&self) -> (usize, usize);
     fn read_region(&self, region: Region) -> Result<RenderedRegion>;
+    fn read_region_with_mask(&self, _region: Region) -> Result<RenderedRegion> {
+        anyhow::bail!("source does not support reference-fallback diagnostics")
+    }
 }
 impl ImageSource for Image {
     fn dimensions(&self) -> (usize, usize) {
@@ -54,6 +59,7 @@ impl ImageSource for Image {
                 rgb,
             },
             fallback_pixels: 0,
+            fallback_mask: None,
         })
     }
 }
@@ -259,6 +265,14 @@ impl ImageSource for PreparedMerge<'_> {
         (self.width, self.height)
     }
     fn read_region(&self, region: Region) -> Result<RenderedRegion> {
+        self.render_region(region, false)
+    }
+    fn read_region_with_mask(&self, region: Region) -> Result<RenderedRegion> {
+        self.render_region(region, true)
+    }
+}
+impl PreparedMerge<'_> {
+    fn render_region(&self, region: Region, capture_mask: bool) -> Result<RenderedRegion> {
         region.validate(self.width, self.height)?;
         let info = self.sources.infos()[0].clone();
         let origin = match &self.sources {
@@ -301,63 +315,73 @@ impl ImageSource for PreparedMerge<'_> {
         let first = &frames[0];
         let mut rgb = vec![0.0; region.width * region.height * 3];
         let fallback = std::sync::atomic::AtomicUsize::new(0);
-        rgb.par_chunks_mut(region.width * 3)
-            .enumerate()
-            .for_each(|(oy, row)| {
-                for ox in 0..region.width {
-                    let x = margin as f32 + (ox + region.x) as f32 / scale as f32;
-                    let y = margin as f32 + (oy + region.y) as f32 / scale as f32;
-                    let refx = x - shifts[0].0;
-                    let refy = y - shifts[0].1;
-                    let reference: [f32; 3] = std::array::from_fn(|c| sample(first, refx, refy, c));
-                    let moving = opts.motion_threshold > 0.0
-                        && frames.iter().enumerate().skip(1).any(|(i, f)| {
-                            (0..3).any(|c| {
-                                (sample(
-                                    f,
-                                    x - shifts[i].0 + residual[i].0 as f32,
-                                    y - shifts[i].1 + residual[i].1 as f32,
-                                    c,
-                                ) - reference[c])
-                                    .abs()
-                                    > opts.motion_threshold
-                            })
-                        });
+        let mut mask = capture_mask.then(|| vec![0; region.width * region.height]);
+        let render_row = |oy: usize, row: &mut [f32], mut mask_row: Option<&mut [u8]>| {
+            for ox in 0..region.width {
+                let x = margin as f32 + (ox + region.x) as f32 / scale as f32;
+                let y = margin as f32 + (oy + region.y) as f32 / scale as f32;
+                let refx = x - shifts[0].0;
+                let refy = y - shifts[0].1;
+                let reference: [f32; 3] = std::array::from_fn(|c| sample(first, refx, refy, c));
+                let moving = opts.motion_threshold > 0.0
+                    && frames.iter().enumerate().skip(1).any(|(i, f)| {
+                        (0..3).any(|c| {
+                            (sample(
+                                f,
+                                x - shifts[i].0 + residual[i].0 as f32,
+                                y - shifts[i].1 + residual[i].1 as f32,
+                                c,
+                            ) - reference[c])
+                                .abs()
+                                > opts.motion_threshold
+                        })
+                    });
+                if moving {
+                    fallback.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                }
+                if let Some(mask_row) = mask_row.as_deref_mut() {
+                    mask_row[ox] = if moving { 255 } else { 0 };
+                }
+                for channel in 0..3 {
                     if moving {
-                        fallback.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        row[ox * 3 + channel] = sample(first, refx, refy, channel);
+                        continue;
                     }
-                    for channel in 0..3 {
-                        if moving {
-                            row[ox * 3 + channel] = sample(first, refx, refy, channel);
-                            continue;
-                        }
-                        let mut sum = 0.0;
-                        let mut count = 0;
-                        for (i, f) in frames.iter().enumerate() {
-                            let sx = x - shifts[i].0 + residual[i].0 as f32;
-                            let sy = y - shifts[i].1 + residual[i].1 as f32;
-                            if opts.mode == Mode::Denoise {
-                                sum += sample(f, sx, sy, channel);
+                    let mut sum = 0.0;
+                    let mut count = 0;
+                    for (i, f) in frames.iter().enumerate() {
+                        let sx = x - shifts[i].0 + residual[i].0 as f32;
+                        let sy = y - shifts[i].1 + residual[i].1 as f32;
+                        if opts.mode == Mode::Denoise {
+                            sum += sample(f, sx, sy, channel);
+                            count += 1;
+                        } else if (sx - sx.round()).abs() < 1e-5 && (sy - sy.round()).abs() < 1e-5 {
+                            let ix = sx.round() as usize;
+                            let iy = sy.round() as usize;
+                            if f.cfa[(iy % 2) * 2 + ix % 2] == channel {
+                                sum += f.pixels[(iy - origin) * f.width + ix];
                                 count += 1;
-                            } else if (sx - sx.round()).abs() < 1e-5
-                                && (sy - sy.round()).abs() < 1e-5
-                            {
-                                let ix = sx.round() as usize;
-                                let iy = sy.round() as usize;
-                                if f.cfa[(iy % 2) * 2 + ix % 2] == channel {
-                                    sum += f.pixels[(iy - origin) * f.width + ix];
-                                    count += 1;
-                                }
                             }
                         }
-                        row[ox * 3 + channel] = if count > 0 {
-                            sum / count as f32
-                        } else {
-                            sample(first, refx, refy, channel)
-                        };
                     }
+                    row[ox * 3 + channel] = if count > 0 {
+                        sum / count as f32
+                    } else {
+                        sample(first, refx, refy, channel)
+                    };
                 }
-            });
+            }
+        };
+        if let Some(mask) = &mut mask {
+            rgb.par_chunks_mut(region.width * 3)
+                .zip(mask.par_chunks_mut(region.width))
+                .enumerate()
+                .for_each(|(oy, (row, mask_row))| render_row(oy, row, Some(mask_row)));
+        } else {
+            rgb.par_chunks_mut(region.width * 3)
+                .enumerate()
+                .for_each(|(oy, row)| render_row(oy, row, None));
+        }
         Ok(RenderedRegion {
             image: Image {
                 width: region.width,
@@ -365,6 +389,7 @@ impl ImageSource for PreparedMerge<'_> {
                 rgb,
             },
             fallback_pixels: fallback.load(std::sync::atomic::Ordering::Relaxed),
+            fallback_mask: mask,
         })
     }
 }

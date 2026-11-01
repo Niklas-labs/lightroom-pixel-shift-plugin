@@ -7,14 +7,15 @@ function M.jsonString(value)
         return string.format('\\u%04x', string.byte(c))
     end) .. '"'
 end
-function M.job(paths, output, mode, storage)
+function M.job(paths, output, mode, storage, diagnostics)
+    assert(diagnostics == nil or type(diagnostics) == 'boolean', 'Invalid diagnostics choice')
     storage = storage or 'ram'
     assert(storage == 'ram' or storage == 'disk', 'Invalid source storage')
     local inputs = {}
     for i, path in ipairs(paths) do inputs[i] = M.jsonString(path) end
     return '{"version":1,"camera":"auto","mode":' .. M.jsonString(mode)
         .. ',"inputs":[' .. table.concat(inputs, ',') .. '],"output":'
-        .. M.jsonString(output) .. ',"source_storage":' .. M.jsonString(storage) .. ',"motion_threshold":0.08,"alignment_radius":2,"compression":"lossless","strip_rows":32}'
+        .. M.jsonString(output) .. (diagnostics and ',"save_diagnostics":true' or '') .. ',"source_storage":' .. M.jsonString(storage) .. ',"motion_threshold":0.08,"alignment_radius":2,"compression":"lossless","strip_rows":32}'
 end
 function M.quote(path, windows)
     assert(not path:find('[%z\r\n]'), 'Invalid command path')

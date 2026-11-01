@@ -136,6 +136,7 @@ mod tests {
             Ok(RenderedRegion {
                 image,
                 fallback_pixels: r.width * r.height,
+                fallback_mask: None,
             })
         }
     }

@@ -140,6 +140,7 @@ def check(engine):
         print('single-D65 fallback: calibration and unmodified sample checks passed')
         check_gradient_photometry(engine, root, job)
         check_calibrated_preview(engine, root, job)
+        check_merge_diagnostics(engine, root, job)
 
 
 def check_calibrated_preview(engine, root, job):
@@ -217,6 +218,61 @@ def check_gradient_photometry(engine, root, job):
                     worst_error = max(worst_error, error)
                     worst_ev = max(worst_ev, float(np.max(np.abs(ev))))
     print(f'12 gradient photometry cases: max sample error {worst_error:.9g}, max mean channel bias {worst_ev:.9g} EV')
+
+
+def check_merge_diagnostics(engine, root, job):
+    # Independent readers verify the diagnostic TIFF payload and that enabling
+    # the wrapper changes neither the primary samples nor its embedded preview.
+    color = json.loads((root / job['inputs'][0]).read_text())['color']
+    color['orientation'] = 6
+    for mode in ('four', 'sixteen', 'denoise'):
+        names = job['inputs'] if mode == 'sixteen' else job['inputs'][:4]
+        for index, name in enumerate(names):
+            path = root / name
+            frame = json.loads(path.read_text())
+            width, height = frame['frame']['width'], frame['frame']['height']
+            frame['frame']['pixels'] = [0.3] * (width * height)
+            if index == 1:
+                for y in range(15, 25):
+                    for x in range(20, 30):
+                        frame['frame']['pixels'][y*width+x] = 0.9
+            frame['color'] = color
+            frame.pop('source_crop', None)
+            path.write_text(json.dumps(frame))
+        primary = None
+        for enabled in (False, True):
+            spec = dict(job, mode=mode, inputs=names, output=f'diagnostics-{mode}-{enabled}.dng',
+                        strip_rows=7, alignment_radius=0, motion_threshold=0.08,
+                        save_diagnostics=enabled)
+            path = root / 'diagnostics-job.json'
+            path.write_text(json.dumps(spec))
+            run = subprocess.run([str(engine), 'merge', '--fixtures', '--job', str(path)],
+                                 check=True, capture_output=True)
+            report = json.loads(run.stdout)
+            data = (root / spec['output']).read_bytes()
+            if not enabled:
+                primary = data
+                continue
+            assert data == primary
+            paths = report['merge_diagnostics']
+            summary = json.loads(Path(paths['summary']).read_text())
+            with tifffile.TiffFile(paths['mask']) as mask_file:
+                mask = mask_file.asarray()
+                assert mask.dtype == np.uint8
+                assert set(np.unique(mask)) == {0, 255}
+                assert int(mask_file.pages[0].tags['Orientation'].value) == 6
+                assert int(mask_file.pages[0].compression) == 8
+            with tifffile.TiffFile(paths['overlay']) as overlay_file:
+                overlay = overlay_file.asarray()
+                assert overlay.shape == (*mask.shape, 3)  # fixture fits in the preview
+                assert int(overlay_file.pages[0].tags['Orientation'].value) == 6
+                selected = overlay[mask != 0]
+                assert np.all(selected[:, 0] > selected[:, 1])
+                assert np.all(selected[:, 0] > selected[:, 2])
+            assert summary['fallback_pixels'] == np.count_nonzero(mask)
+            assert report['report']['fallback_pixels'] == summary['fallback_pixels']
+            assert summary['total_pixels'] == mask.size
+        print(f'{mode}: independent diagnostic mask/overlay and exact DNG parity passed')
 
 
 if __name__ == '__main__':

@@ -389,3 +389,73 @@ fn disk_sources_are_lossless_and_release_scratch_on_success_and_failure() {
         .unwrap();
     assert!(!out.status.success());
 }
+
+#[test]
+fn optional_diagnostics_preserve_dng_pixels_for_all_modes_and_storage_choices() {
+    for mode in ["four", "sixteen", "denoise"] {
+        for storage in ["ram", "disk"] {
+            let (dir, job) = setup(mode);
+            let mut frame: serde_json::Value =
+                serde_json::from_slice(&fs::read(dir.path().join("sensor-2.json")).unwrap())
+                    .unwrap();
+            for y in 10..15 {
+                for x in 13..18 {
+                    frame["frame"]["pixels"][y * 32 + x] = json!(0.9);
+                }
+            }
+            fs::write(
+                dir.path().join("sensor-2.json"),
+                serde_json::to_vec(&frame).unwrap(),
+            )
+            .unwrap();
+            let mut spec: serde_json::Value =
+                serde_json::from_slice(&fs::read(&job).unwrap()).unwrap();
+            spec["source_storage"] = json!(storage);
+            let mut original_pixels = None;
+            for enabled in [false, true] {
+                let name = if enabled {
+                    "diagnostic.dng"
+                } else {
+                    "plain.dng"
+                };
+                spec["output"] = json!(name);
+                spec["save_diagnostics"] = json!(enabled);
+                spec["strip_rows"] = json!(3);
+                fs::write(&job, serde_json::to_vec(&spec).unwrap()).unwrap();
+                let out = Command::new(env!("CARGO_BIN_EXE_sony-pixelshift"))
+                    .args(["merge", "--fixtures", "--job"])
+                    .arg(&job)
+                    .output()
+                    .unwrap();
+                assert!(
+                    out.status.success(),
+                    "{}",
+                    String::from_utf8_lossy(&out.stderr)
+                );
+                let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+                // Compare the entire deterministic DNG, including main samples,
+                // calibration metadata and embedded preview.
+                let pixels = fs::read(dir.path().join(name)).unwrap();
+                if enabled {
+                    assert_eq!(original_pixels.as_ref().unwrap(), &pixels);
+                    let paths = &report["merge_diagnostics"];
+                    assert!(std::path::Path::new(paths["overlay"].as_str().unwrap()).is_file());
+                    let mut mask = tiff::decoder::Decoder::new(
+                        fs::File::open(paths["mask"].as_str().unwrap()).unwrap(),
+                    )
+                    .unwrap();
+                    let tiff::decoder::DecodingResult::U8(mask) = mask.read_image().unwrap() else {
+                        panic!("expected mask")
+                    };
+                    let count = mask.iter().filter(|v| **v != 0).count();
+                    assert!(count > 0 && count < mask.len());
+                    assert_eq!(report["report"]["fallback_pixels"], count);
+                } else {
+                    assert!(report["merge_diagnostics"].is_null());
+                    assert!(!dir.path().join("plain.dng.diagnostics").exists());
+                    original_pixels = Some(pixels);
+                }
+            }
+        }
+    }
+}

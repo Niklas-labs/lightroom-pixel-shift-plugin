@@ -8,6 +8,7 @@ local LrPrefs = import 'LrPrefs'
 local LrView = import 'LrView'
 local LrBinding = import 'LrBinding'
 local LrProgressScope = import 'LrProgressScope'
+local LrShell = import 'LrShell'
 local Protocol = require 'Protocol'
 local Engine = require 'Engine'
 local Labels = require 'Labels'
@@ -56,6 +57,7 @@ function M.start(denoise)
                 local view = LrView.osFactory()
                 local settings = LrBinding.makePropertyTable(context)
                 settings.sourceStorage = preferences.sourceStorage == 'disk' and 'disk' or 'ram'
+                settings.saveMergeDiagnostics = preferences.saveMergeDiagnostics == true
                 local choice = LrDialogs.presentModalDialog {
                     title = summary.title,
                     contents = view:column {
@@ -74,11 +76,15 @@ function M.start(denoise)
                                 { title = 'Disk (less RAM)', value = 'disk' },
                             } },
                         },
+                        view:checkbox { title = 'Save merge diagnostics',
+                            value = LrView.bind { key = 'saveMergeDiagnostics', bind_to_object = settings },
+                            checked_value = true, unchecked_value = false },
                     },
                     actionVerb = denoise and 'Reduce noise' or 'Merge', cancelVerb = 'Cancel',
                 }
                 if choice ~= 'ok' then return end
                 preferences.sourceStorage = settings.sourceStorage
+                preferences.saveMergeDiagnostics = settings.saveMergeDiagnostics
                 assert(not LrFileUtils.exists(output), 'Output already exists. Retry to choose a unique name.')
                 progress = Progress.new(LrProgressScope { title=summary.title, functionContext=context }, count, LrTasks)
                 LrTasks.yield() -- Let Lightroom paint the scope before launching the helper.
@@ -87,7 +93,7 @@ function M.start(denoise)
                 infoPath = jobPath .. '.engine.json'
                 logPath = LrFileUtils.chooseUniqueFileName(output .. '.pixelshift.log')
                 local mode = denoise and 'denoise' or 'auto'
-                write(jobPath, Protocol.job(paths, output, mode, settings.sourceStorage))
+                write(jobPath, Protocol.job(paths, output, mode, settings.sourceStorage, settings.saveMergeDiagnostics))
                 write(logPath, 'Sony Pixel Shift Lightroom plugin ' .. Engine.version .. '\nBuild: ' .. (manifest and manifest.source_revision or 'development override') .. '\nHelper: ' .. executable .. '\n')
                 progress:stage('Checking engine')
                 local status = LrTasks.execute(Engine.command(executable, { 'info', '--output', infoPath }, WIN_ENV))
@@ -101,7 +107,10 @@ function M.start(denoise)
                     end
                     error(message, 0)
                 end
-                Engine.checkInfo(Engine.readJson(infoPath), manifest)
+                local info = Engine.readJson(infoPath)
+                Engine.checkInfo(info, manifest)
+                assert(not settings.saveMergeDiagnostics or info.merge_diagnostics == true,
+                    'This helper does not support merge diagnostics. Install the matching plugin build.')
                 status = progress:run(Engine.command(executable,
                     { 'merge', '--job', jobPath, '--result', resultPath, '--log', logPath }, WIN_ENV), logPath)
                 local result
@@ -110,6 +119,17 @@ function M.start(denoise)
                     (result and result.message) or ('Engine failed (exit ' .. tostring(status) .. ').'))
                 assert(result.output == output, 'The engine reported a different output path; import was stopped.')
                 assert(LrFileUtils.exists(output) == 'file', 'Engine did not produce the DNG.')
+                local diagnosticsDirectory = output .. '.diagnostics'
+                if settings.saveMergeDiagnostics then
+                    local diagnosticFiles = result.merge_diagnostics
+                    assert(type(diagnosticFiles) == 'table' and diagnosticFiles.directory == diagnosticsDirectory,
+                        'Engine did not report the expected diagnostics directory.')
+                    for key, name in pairs { mask='reference-fallback.tif', overlay='overlay.tif', summary='summary.json' } do
+                        local path = LrPathUtils.child(diagnosticsDirectory, name)
+                        assert(diagnosticFiles[key] == path and LrFileUtils.exists(path) == 'file',
+                            'Merge diagnostic missing: ' .. name)
+                    end
+                end
                 progress:stage('Adding to Lightroom')
                 local callbackRan = false
                 local existing = catalog:findPhotoByPath(output)
@@ -139,9 +159,25 @@ function M.start(denoise)
                 succeeded = true
                 progress:done()
                 local visibility = visible and 'View: Result selected' or 'View: Check library filters or current collection'
-                LrDialogs.message(summary.title,
-                    'Saved: ' .. LrPathUtils.leafName(output) .. '\nCatalog: Confirmed\n' .. visibility ..
-                    '\nFolder: ' .. LrPathUtils.parent(output) .. '\n\nDiagnostic log: ' .. logPath, 'info')
+                local message = 'Saved: ' .. LrPathUtils.leafName(output) .. '\nCatalog: Confirmed\n' .. visibility ..
+                    '\nFolder: ' .. LrPathUtils.parent(output) .. '\n\nDiagnostic log: ' .. logPath
+                if settings.saveMergeDiagnostics then
+                    local choice = LrDialogs.presentModalDialog { title = summary.title,
+                        contents = view:column {
+                            view:static_text { title = message },
+                            view:static_text { title = 'Reference fallback: Red overlay | White mask' },
+                        }, actionVerb = 'Open diagnostics', cancelVerb = 'Close' }
+                    if choice == 'ok' then
+                        local opened, problem = LrTasks.pcall(LrShell.revealInShell,
+                            LrPathUtils.child(diagnosticsDirectory, 'overlay.tif'))
+                        if not opened then
+                            LrDialogs.message('Merge diagnostics', 'Saved: ' .. diagnosticsDirectory ..
+                                '\nCould not reveal files: ' .. tostring(problem), 'warning')
+                        end
+                    end
+                else
+                    LrDialogs.message(summary.title, message, 'info')
+                end
             end)
         end)
         if progress then progress:done() end
