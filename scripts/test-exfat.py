@@ -11,6 +11,13 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def disk_command(args):
+    result = subprocess.run(args, capture_output=True, text=True, timeout=120)
+    if result.returncode:
+        raise RuntimeError(f'Disk-image command failed: {args!r}\n{result.stdout}\n{result.stderr}')
+    return result
+
+
 def run_engine(engine, spec, job):
     job.write_text(json.dumps(spec), encoding='utf-8')
     result = subprocess.run([str(engine), 'merge', '--fixtures', '--job', str(job)],
@@ -33,12 +40,13 @@ def check(engine):
         image = root / 'test.dmg'
         mount = root / 'exFAT volume'
         mount.mkdir()
-        subprocess.run(['hdiutil', 'create', '-size', '128m', '-fs', 'ExFAT',
-                        '-volname', 'PixelShiftExFAT', str(image)], check=True, capture_output=True)
+        # Avoid a default partition layout consuming the small test image, and
+        # leave enough space for exFAT's minimum formatting requirements.
+        disk_command(['hdiutil', 'create', '-size', '512m', '-layout', 'NONE',
+                      '-fs', 'ExFAT', '-volname', 'PixelShiftExFAT', str(image)])
         attached = False
         try:
-            subprocess.run(['hdiutil', 'attach', '-nobrowse', '-mountpoint', str(mount), str(image)],
-                           check=True, capture_output=True)
+            disk_command(['hdiutil', 'attach', '-nobrowse', '-mountpoint', str(mount), str(image)])
             attached = True
             info = plistlib.loads(subprocess.check_output(['diskutil', 'info', '-plist', str(mount)]))
             assert str(info.get('FilesystemType', '')).lower() == 'exfat', info
@@ -79,7 +87,7 @@ def check(engine):
                         print(f'exFAT {mode}/{extension}/{storage}: {publication}; diagnostics, exact bytes, no overwrite and cleanup passed', flush=True)
         finally:
             if attached or mount.is_mount():
-                subprocess.run(['hdiutil', 'detach', str(mount)], check=True, capture_output=True, timeout=60)
+                disk_command(['hdiutil', 'detach', str(mount)])
 
 
 if __name__ == '__main__':
