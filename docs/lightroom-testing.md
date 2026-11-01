@@ -191,3 +191,15 @@ Lightroom fully closed and verify the registered plugin path.
 
 The overlay uses the engine's approximate As Shot preview rendering. Compare
 fine detail and brightness in Lightroom Develop, not against the overlay.
+
+
+### External exFAT volumes (build 12)
+
+Merge a 16-shot capture with diagnostics on the external destination. Confirm the
+DNG and diagnostic folder are complete and the DNG is imported. Check the log for
+`output publication: ExclusiveCopy` when the volume rejects native no-clobber rename.
+The compatibility copy needs additional destination space while saving; see
+[publication behavior](streaming.md). A failed merge must not replace an existing
+image. Compare a successful result with the same capture saved on APFS: image data
+and visible dimensions should match. Real-camera external-drive validation remains
+a host test; the CI exFAT fixture test proves filesystem behavior on a disk image.

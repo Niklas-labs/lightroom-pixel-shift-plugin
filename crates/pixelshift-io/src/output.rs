@@ -33,8 +33,17 @@ impl WriteOptions {
         Ok(())
     }
 }
+/// How the completed image acquired its final name.
+#[derive(Clone, Copy, Debug, Default, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OutputPublication {
+    #[default]
+    NativeNoClobber,
+    ExclusiveCopy,
+}
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct OutputStats {
+    pub publication: OutputPublication,
     pub regions: usize,
     pub fallback_pixels: usize,
     pub peak_region_pixels: usize,

@@ -13,6 +13,9 @@ jobs:
           components: rustfmt, clippy
       - run: cargo fmt --all -- --check
       - run: cargo test --workspace --locked
+      - name: Validate output publication on an actual exFAT volume
+        if: runner.os == 'macOS'
+        run: python3 scripts/test-exfat.py --engine target/debug/sony-pixelshift
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
   lua:
     runs-on: ubuntu-latest

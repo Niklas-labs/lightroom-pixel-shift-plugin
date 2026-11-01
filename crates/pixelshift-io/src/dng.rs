@@ -2,7 +2,7 @@
 use super::preview::render_preview;
 use super::{Color, OutputWriter, write_aligned_tag, write_exif};
 use super::{OutputCompression, OutputStats, WriteOptions};
-use anyhow::{Result, ensure};
+use anyhow::{Context, Result, ensure};
 use pixelshift_core::{Image, ImageSource, Region};
 use std::time::Instant;
 use std::{
@@ -375,11 +375,14 @@ pub fn write_dng_from_source(
             write_aligned_tag(tags, Tag::Unknown(50732), rational(1.0)?)?;
             directory.finish()?;
         }
-        writer.flush()?;
+        writer.flush().context("flush completed DNG data")?;
     }
-    temporary.as_file().sync_all()?;
+    temporary
+        .as_file()
+        .sync_all()
+        .context("sync completed DNG data")?;
     stats.output_bytes = temporary.as_file().metadata()?.len();
-    temporary.persist_noclobber(path).map_err(|e| e.error)?;
+    stats.publication = super::publication::publish(temporary, path)?;
     stats.total_seconds = started.elapsed().as_secs_f64();
     Ok(stats)
 }

@@ -487,6 +487,10 @@ fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
                     )?
                 }
             };
+            diagnostics.record(format!(
+                "output publication: {:?}",
+                output_stats.publication
+            ))?;
             let report = match &reference_result {
                 Some((_, report)) => prepared.report(report.fallback_pixels),
                 None => prepared.report(output_stats.fallback_pixels),
@@ -524,7 +528,7 @@ fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
                     (false, SourceStorage::Disk) => "packed_u16_disk",
                 }
             };
-            let execution = json!({"streamed_output":!reference,"source_storage":storage_name,"scratch_bytes":scratch_bytes,"peak_source_region_bytes":peak_source_region_bytes,
+            let execution = json!({"output_publication":output_stats.publication,"streamed_output":!reference,"source_storage":storage_name,"scratch_bytes":scratch_bytes,"peak_source_region_bytes":peak_source_region_bytes,
                 "source_buffer_bytes":source_buffer_bytes,"peak_output_region_bytes":output_stats.peak_region_pixels*3*4,
                 "compression":spec.compression,"strip_rows":spec.strip_rows,
                 "timings":{"preflight_seconds":preflight_seconds,"decode_seconds":decode_seconds,

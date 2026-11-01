@@ -17,7 +17,8 @@ pub use diagnostics::inspect_sensor_samples;
 mod store;
 pub use store::{PackedSensor, SourceStorage};
 mod output;
-pub use output::{OutputCompression, OutputStats, WriteOptions};
+mod publication;
+pub use output::{OutputCompression, OutputPublication, OutputStats, WriteOptions};
 
 mod geometry;
 pub use geometry::{Crop, map_reference_crop};
@@ -643,11 +644,14 @@ pub fn write_tiff_from_source(
             output.write_tag(tiff::tags::Tag::Software, "sony-pixelshift 0.1.0")?;
             output.finish()?;
         }
-        writer.flush()?;
+        writer.flush().context("flush completed TIFF data")?;
     }
-    temporary.as_file().sync_all()?;
+    temporary
+        .as_file()
+        .sync_all()
+        .context("sync completed TIFF data")?;
     stats.output_bytes = temporary.as_file().metadata()?.len();
-    temporary.persist_noclobber(path).map_err(|e| e.error)?;
+    stats.publication = publication::publish(temporary, path)?;
     stats.total_seconds = started.elapsed().as_secs_f64();
     Ok(stats)
 }

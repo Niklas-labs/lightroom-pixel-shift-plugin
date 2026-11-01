@@ -59,7 +59,7 @@ directory. A supplied directory must already exist; relative paths resolve
 beside the job. Disk scratch needs approximately two bytes per sensor pixel per
 input (about 1.95 GB for sixteen 61 MP shots), plus the separate output file.
 File creation/write/read errors abort with diagnostics, scratch handles close on
-success/error, and partial output is not published. Anonymous temporary files
+success/error. Anonymous temporary files
 are removed when their last handle closes, including process termination;
 there is no reusable disk cache or recovery manifest. Available disk-space
 preflight is not implemented; the files grow as sources are ingested.
@@ -87,8 +87,21 @@ Use `"compression": "none"` for an uncompressed diagnostic output. Omitted field
 remain valid protocol-1 jobs; `strip_rows` defaults to 32. Unknown compression
 values or unsafe row counts are rejected before output is written. Files remain
 classic TIFF/DNG; worst-case size is checked, and final publication uses a
-same-directory temporary file, sync and no-clobber rename. Late reconstruction,
-encoding or progress-callback failures remove the temporary output.
+same-directory temporary file, sync and native no-clobber rename/link where supported.
+Late reconstruction, encoding or progress-callback failures remove the temporary output.
+
+On volumes such as exFAT that reject native no-clobber publication, the completed
+encoded file is copied in bounded memory to a destination reserved with exclusive
+creation. Existing files (including symlinks and concurrently created outputs) are
+never replaced. A returned copy/write/sync error removes the partial destination;
+Lightroom imports only after successful completion. This fallback needs space for
+both encoded copies and adds final disk I/O. It does not allocate the full image or
+change image bytes. Unlike native publication, the fallback's final name is visible
+while copying; process/power interruption can leave an incomplete file under that
+name. Remove an incomplete output before retrying or use the plugin's unique name.
+The result/log records `output_publication` (`native_no_clobber` or `exclusive_copy`).
+macOS CI mounts an actual exFAT disk image to test 4/16-shot DNG/TIFF output, both
+storage settings, diagnostics, byte parity and overwrite refusal.
 
 LibRaw/rawpy, tifffile and local Adobe DNG SDK validation accept the tested
 Deflate float32 DNG strips. Rawler 0.8's reader does **not** decode Deflate strips;

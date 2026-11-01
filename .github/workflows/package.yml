@@ -74,6 +74,8 @@ jobs:
         run: |
           cargo build --release --locked --target aarch64-apple-darwin -p pixelshift-cli
           cargo build --release --locked --target x86_64-apple-darwin -p pixelshift-cli
+      - name: Validate release engine on an actual exFAT volume
+        run: python3 scripts/test-exfat.py --engine target/aarch64-apple-darwin/release/sony-pixelshift
       - name: Assemble universal engine
         run: |
           mkdir -p target/universal
