@@ -121,6 +121,12 @@ use the same validated catalog, bundled inside the plugin. See
 adding a model. Only the a7CR is registered initially; RAW calibration stays with
 the decoder.
 
+## Stack flags
+
+**Library → Plug-in Extras** also offers **Flag entire stack**, **Reject entire
+stack**, and **Unflag entire stack** for selected folder stacks, including hidden
+members. Works with any photo format. See the [brief keyboard shortcut setup](docs/lightroom-testing.md#stack-flags-and-keyboard-shortcuts).
+
 ## Implemented and next
 
 See [ROADMAP.md](ROADMAP.md) for prioritized follow-ups and acceptance criteria,

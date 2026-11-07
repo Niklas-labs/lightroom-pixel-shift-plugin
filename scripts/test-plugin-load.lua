@@ -42,11 +42,11 @@ toolkitRequire=function(name)
     return cache[name]
 end
 local info=toolkitRequire('Info')
-assert(info.LrExportMenuItems == nil and #info.LrLibraryMenuItems == 2)
+assert(info.LrExportMenuItems == nil and #info.LrLibraryMenuItems == 5)
 for _,item in ipairs(info.LrLibraryMenuItems) do
     toolkitRequire(assert(item.file:match('^(.*)%.lua$')))
 end
-assert(#queued == 2, 'Packaged menu scripts did not reach the workflow')
+assert(#queued == 5, 'Packaged menu scripts did not reach the workflow')
 local progress=toolkitRequire('PixelShiftProgress').new(scope,4,tasks)
 assert(scope.caption == 'Preparing')
 progress:line('decode 1/4: source.ARW')

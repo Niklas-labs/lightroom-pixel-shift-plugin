@@ -53,6 +53,40 @@ helper launched: changing quarantine will not fix that metadata error.
 
 Developer ID signing and notarized distribution are tracked in ROADMAP.md.
 
+## Stack flags and keyboard shortcuts
+
+In **Library**, open a folder in the **Folders** panel, select a photo or stack,
+then choose **Library → Plug-in Extras → Flag entire stack**, **Reject entire
+stack**, or **Unflag entire stack**. Hidden/collapsed members are included. A
+selection spanning several stacks affects all of them; unstacked photos affect
+only themselves. These commands work with any photo format. Use **Edit → Undo**
+to reverse the changes. Lightroom may combine rapidly repeated actions into one undo.
+
+Folder sources are required; collection stacks are independent and unsupported.
+Flag filters may hide photos after a flag changes. Success shows a brief fading
+message, without a confirmation dialog or automatic advance to the next photo.
+
+### macOS shortcut setup
+
+1. Open **System Settings → Keyboard → Keyboard Shortcuts → App Shortcuts**.
+2. Click **+** and select **Adobe Lightroom Classic** (use **Other…** if needed).
+3. For **Menu Title**, paste one line below, including its **three leading spaces**:
+
+```text
+   Flag entire stack
+   Reject entire stack
+   Unflag entire stack
+```
+
+4. Set a shortcut and click **Done**. Repeat for the other commands. Suggested
+   shortcuts: **Control–Option–P**, **Control–Option–X**, **Control–Option–U**.
+
+In Library, check the shortcut appears beside the command. If it does not, check
+spaces/capitalization and restart Lightroom. These are macOS App Shortcuts; the
+plugin does not replace Lightroom's existing P/X/U keys.
+
+On Windows, use the Library menu or configure an external shortcut utility.
+
 ## Compare Sony and plugin brightness
 
 For a local comparison of the same capture merged by Imaging Edge and the
@@ -203,3 +237,20 @@ The compatibility copy needs additional destination space while saving; see
 image. Compare a successful result with the same capture saved on APFS: image data
 and visible dimensions should match. Real-camera external-drive validation remains
 a host test; the CI exFAT fixture test proves filesystem behavior on a disk image.
+
+
+### Stack flag host checks (build 13)
+
+- In a folder, select only the top of a collapsed stack. Run all three flag commands
+  and expand it to verify every member changed, including RAW/JPEG and virtual copies.
+- Select several members of the same stack, then several stacks and an unstacked
+  image. Verify each intended photo changed once and unrelated photos stayed unchanged.
+- Verify **Edit → Undo** restores the previous mixed flag states. No success dialog
+  should interrupt shortcut use; a fading message reports the target photo count.
+- Deselect everything: the command must stop, even though Lightroom's target-photo
+  API would otherwise return the whole filmstrip. Try a collection: it must direct
+  you to the Folders panel without changing any flags.
+- Test a flag filter that hides rejected/picked photos. The selected stack's hidden
+  members should still change; library filters are preserved.
+- Set the three macOS App Shortcuts above and invoke each in Library. Confirm
+  no Accessibility permission, RAW-helper launch or source-file write is needed.
