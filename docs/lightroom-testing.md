@@ -66,6 +66,21 @@ Folder sources are required; collection stacks are independent and unsupported.
 Flag filters may hide photos after a flag changes. Success shows a brief fading
 message, without a confirmation dialog or automatic advance to the next photo.
 
+### Sync rejection after culling
+
+Cull the tops of collapsed stacks with Lightroom's normal **X / U** keys. When
+ready, clear flag filters, select the stacks to sync (**Command–A** selects the
+visible folder photos), then choose **Library → Plug-in Extras → Sync rejection
+from stack top**.
+
+- **Top rejected:** reject all remaining stack members.
+- **Top not rejected:** clear rejections from remaining members, preserving picks.
+
+The top stays unchanged. Each selected stack follows its own actual top, even if
+you select a lower member. Hidden members are included; unstacked photos are
+ignored. Already synchronized stacks create no changes. Use **Edit → Undo** to
+reverse the sync.
+
 ### macOS shortcut setup
 
 1. Open **System Settings → Keyboard → Keyboard Shortcuts → App Shortcuts**.
@@ -76,10 +91,12 @@ message, without a confirmation dialog or automatic advance to the next photo.
    Flag entire stack
    Reject entire stack
    Unflag entire stack
+   Sync rejection from stack top
 ```
 
 4. Set a shortcut and click **Done**. Repeat for the other commands. Suggested
-   shortcuts: **Control–Option–P**, **Control–Option–X**, **Control–Option–U**.
+   shortcuts: **Control–Option–P**, **Control–Option–X**, **Control–Option–U**;
+   use **Control–Option–S** for rejection sync.
 
 In Library, check the shortcut appears beside the command. If it does not, check
 spaces/capitalization and restart Lightroom. These are macOS App Shortcuts; the
@@ -254,3 +271,17 @@ a host test; the CI exFAT fixture test proves filesystem behavior on a disk imag
   members should still change; library filters are preserved.
 - Set the three macOS App Shortcuts above and invoke each in Library. Confirm
   no Accessibility permission, RAW-helper launch or source-file write is needed.
+
+
+### Rejection sync host checks (build 14)
+
+- Reject only the top of a collapsed stack, select it, and sync. Expand to confirm
+  all lower members became rejected and the top stayed unchanged.
+- Unflag the top, leave a lower member picked and another rejected, then sync:
+  the lower rejection clears while the pick survives. A picked top behaves the same.
+- Select a non-top member and reorder a stack: sync must follow actual position 1,
+  not the selected photo or the order returned by the metadata API.
+- Select several stacks with different top states and an unstacked photo. Each
+  stack follows its own top; the unstacked photo stays unchanged. Check Undo.
+- Repeat an aligned sync: it reports no change. With no selection, it must stop
+  rather than applying to the whole filmstrip. Folder-source restrictions still apply.

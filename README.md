@@ -125,7 +125,9 @@ the decoder.
 
 **Library → Plug-in Extras** also offers **Flag entire stack**, **Reject entire
 stack**, and **Unflag entire stack** for selected folder stacks, including hidden
-members. Works with any photo format. See the [brief keyboard shortcut setup](docs/lightroom-testing.md#stack-flags-and-keyboard-shortcuts).
+members. **Sync rejection from stack top** applies each selected stack top's
+rejected/not-rejected state to the remaining members after normal culling, preserving
+picks when clearing rejections. Works with any photo format. See the [brief keyboard shortcut setup](docs/lightroom-testing.md#stack-flags-and-keyboard-shortcuts).
 
 ## Implemented and next
 
