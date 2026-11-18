@@ -26,6 +26,15 @@ assert(engine.userError('[string "Workflow.lua"]:80: unsupported Sony MakerNote 
 assert(engine.launchError(126, false):find('Privacy & Security', 1, true))
 assert(not engine.launchError(126, true):find('Privacy & Security', 1, true))
 local manifest = {protocol_version=1, engine_version='0.1.0'}
+-- Both helpers can coexist; selection depends only on the running host.
+local function child(parent, name) return parent .. '/' .. name end
+local function exists(path)
+    if path == '/plugin/bin/sony-pixelshift' or path == '/plugin/bin/sony-pixelshift.exe' then return 'file' end
+end
+for _, windows in ipairs({false, true}) do
+    local path, custom = engine.executable('/plugin', windows, {}, exists, child)
+    assert(path == '/plugin/bin/sony-pixelshift' .. (windows and '.exe' or '') and not custom)
+end
 engine.checkManifest(manifest)
 engine.checkInfo({protocol_version=1, engine_version='0.1.0',camera_models={'ILCE-7CR'},autodetection=true,output_formats={'dng','tiff'},source_storages={'ram','disk'},streamed_output=true,output_compressions={'lossless','none'}}, manifest)
 assert(not pcall(engine.checkManifest, {protocol_version=2,engine_version='0.1.0'}))

@@ -14,7 +14,7 @@ function M.executable(pluginPath, windows, preferences, exists, child)
         return preferences.enginePath, true
     end
     local executable = child(child(pluginPath, 'bin'), windows and 'sony-pixelshift.exe' or 'sony-pixelshift')
-    assert(exists(executable) == 'file', 'The bundled engine is missing. Download and extract the complete plugin artifact for your operating system.')
+    assert(exists(executable) == 'file', 'The bundled engine is missing. Download and extract the complete cross-platform plugin artifact.')
     return executable, false
 end
 function M.checkManifest(manifest)

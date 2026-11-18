@@ -8,11 +8,19 @@ and Lightroom host acceptance is still required. No original RAW is modified.
 ## Install the CI build in Lightroom Classic
 
 Download the latest successful **Package Lightroom Plugin** workflow artifact:
-`SonyPixelShift-<version>-macos-universal.zip` (Apple Silicon and Intel) or
-`SonyPixelShift-<version>-windows-x86_64.zip`. Extract the downloaded ZIP once; `SonyPixelShift.lrplugin` is at its root. Move `SonyPixelShift.lrplugin` to a permanent location
+**`SonyPixelShift-<version>-cross-platform.zip`** works on macOS (Apple Silicon and
+Intel) and Windows x86-64. Extract the downloaded ZIP once; `SonyPixelShift.lrplugin`
+is at its root. Move `SonyPixelShift.lrplugin` to a permanent location
 and add that directory using **File → Plug-in Manager → Add**.
 
-The package embeds the matching Rust executable. No separate engine selection,
+The package embeds both matching Rust executables and chooses the right one
+automatically. The same plugin folder can be shared across Mac and Windows;
+register its local path in Lightroom on each computer once. Lightroom records
+plugin locations per computer, so macOS and Windows paths may differ. Quit Lightroom
+on all computers using the folder before replacing it. Preserve the Mac helper's
+executable permission when syncing (or re-extract the ZIP on the Mac if lost).
+Smaller platform-specific ZIPs remain available.
+No separate engine selection,
 Rust, Python, Perl or ExifTool installation is required. The macOS publishing
 workflow requires Developer ID signing and Apple notarization acceptance. Older
 or local development artifacts may still require approving the specific helper

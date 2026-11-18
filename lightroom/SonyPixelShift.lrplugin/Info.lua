@@ -13,5 +13,5 @@ return {
     LrToolkitIdentifier = 'org.sonypixelshift.lightroom',
     LrPluginName = 'Sony Pixel Shift (Experimental)',
     LrLibraryMenuItems = menuItems,
-    VERSION = { major = 0, minor = 1, revision = 0, build = 14 },
+    VERSION = { major = 0, minor = 1, revision = 0, build = 15 },
 }

@@ -9,9 +9,10 @@ improved subpixel motion correction remain separate checks.
 
 1. Open the repository's **Actions** tab and the latest successful **Package
    Lightroom Plugin** run for `main`.
-2. Under **Artifacts**, download the package for your system: macOS universal
-   (Intel and Apple Silicon), or Windows x86-64. Download the individual
-   `SonyPixelShift-<version>-<platform>.zip` artifact and extract it once.
+2. Under **Artifacts**, download **`SonyPixelShift-<version>-cross-platform.zip`**
+   and extract it once. It includes macOS universal (Intel and Apple Silicon)
+   and Windows x86-64 helpers; the plugin selects automatically. Smaller
+   `macos-universal` and `windows-x86_64` packages remain available.
    `SonyPixelShift.lrplugin` is directly inside, alongside installation notes.
    The package SHA-256 is recorded in the workflow job summary.
 3. Move `SonyPixelShift.lrplugin` to a permanent location. Keep its `bin`,
@@ -27,6 +28,20 @@ improved subpixel motion correction remain separate checks.
    blocks the helper, approve that specific downloaded application through
    **System Settings → Privacy & Security**, then retry the operation. The exact
    prompt depends on your OS security policy.
+
+### Using the same plugin on Mac and Windows
+
+Keep the complete cross-platform `.lrplugin` folder in a shared or synced location.
+Add its local path in Plug-in Manager on each computer once; Lightroom stores the
+path separately on each computer, and a Mac volume path may differ from a Windows
+drive path. No helper selection or platform-specific plugin folder is needed.
+Quit Lightroom on every computer using that folder before updating it.
+
+Extract the original ZIP on macOS to preserve `bin/sony-pixelshift` executable
+permission. Some Windows copy/sync tools lose Unix permissions; if the Mac then
+reports permission denied, re-extract the ZIP on the Mac. This is separate from
+quarantine and does not require changing the signed binary. Only the Mac helper
+is Developer ID signed and notarized; the Windows helper remains unsigned.
 
 ## macOS execution
 

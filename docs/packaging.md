@@ -1,7 +1,12 @@
 # CI plugin packages
 
 The **Package Lightroom Plugin** workflow runs for pushes to `main` and supports
-manual `workflow_dispatch`. It produces two Actions artifacts:
+manual `workflow_dispatch`. The recommended download is:
+
+- **`SonyPixelShift-<version>-cross-platform.zip`**: one `.lrplugin` containing both
+  the macOS universal helper and Windows x86-64 helper. Lightroom chooses by host OS.
+
+Two smaller platform-specific artifacts remain available and serve as inputs:
 
 - `SonyPixelShift-<version>-macos-universal.zip`: a ZIP containing a universal Apple Silicon +
   Intel Rust executable and the Lua plugin.
@@ -21,6 +26,23 @@ checksum, project license, dependency license inventory and available upstream
 license/notice files. They require a native Rust metadata backend; the assembler
 refuses an engine reporting an external ExifTool dependency. No Python, Perl,
 ExifTool, Rust toolchain or developer PATH is required at runtime.
+
+`scripts/combine-packages.py` runs after both platform packages pass their smoke
+tests (including Intel). It requires matching source revisions, protocol/engine/plugin
+versions, metadata backend, and byte-identical shared Lua, configuration, notices
+and testing instructions. It rejects unexpected helpers and checksum mismatches.
+It copies each executable byte-for-byte, preserving the Mac signature and accepted
+notarization identity, and records both helper paths, hashes and signing states in
+the combined schema-2 manifest's `engines` map. Single-platform manifests remain
+schema 1. Runtime protocol 1 is unchanged; Lua already selects `bin/sony-pixelshift`
+on macOS and `bin/sony-pixelshift.exe` on Windows.
+
+The combined archive is then downloaded and tested natively on Apple Silicon,
+Intel and Windows, including both helper checksums and the existing empty-PATH
+merge/configuration smoke tests. Choose a fully successful workflow run when downloading.
+The combined ZIP retains executable permission on the Mac helper; copy/sync tools
+must preserve it. Lightroom plugin paths are registered separately per computer;
+the same folder contents work on both systems, even when their local paths differ.
 
 macOS binaries are assembled with `lipo` and Developer ID signed using the personal
 P12 record fetched from OpenBao via GitHub OIDC. Signing is enabled for every macOS
@@ -64,6 +86,20 @@ python3 scripts/package-plugin.py \
 python3 scripts/test-package.py --archive-dir dist --platform macos-universal
 python3 scripts/test-package-unit.py
 ```
+
+To combine signed/notarized platform ZIPs from the same revision:
+
+```sh
+python3 scripts/combine-packages.py \
+  --macos dist/SonyPixelShift-0.1.0-macos-universal.zip \
+  --windows dist/SonyPixelShift-0.1.0-windows-x86_64.zip
+python3 scripts/test-package.py --archive-dir dist --package-platform cross-platform \
+  --platform macos-universal  # use windows-x86_64 on Windows
+```
+
+Combining requires no Rust toolchain and never executes a foreign-platform binary.
+It refuses unsigned or unnotarized Mac components, so development builds stay
+platform-specific.
 
 The assembler invokes `cargo metadata --locked` to capture dependency identities
 and notices. `--metadata path.json` can supply previously captured metadata.

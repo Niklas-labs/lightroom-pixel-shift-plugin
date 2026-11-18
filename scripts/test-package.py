@@ -51,7 +51,7 @@ def run_engine(executable, args, env, check=False):
                           capture_output=True, text=True, encoding='utf-8')
 
 
-def smoke_test(archive, expected_platform, expected_machine=None):
+def smoke_test(archive, expected_platform, expected_machine=None, package_platform=None):
     if expected_machine and platform.machine().lower() not in expected_machine.lower().split(','):
         raise AssertionError(f'Expected native {expected_machine}; running on {platform.machine()}')
     with tempfile.TemporaryDirectory(prefix='pixel shift package ') as temporary:
@@ -59,9 +59,20 @@ def smoke_test(archive, expected_platform, expected_machine=None):
         extract_package(archive, root)
         plugin = root / 'SonyPixelShift.lrplugin'
         manifest = json.loads((plugin / 'manifest.json').read_text(encoding='utf-8'))
-        assert manifest['platform'] == expected_platform
-        engine = plugin / manifest['engine']
-        assert hashlib.sha256(engine.read_bytes()).hexdigest() == manifest['engine_sha256']
+        assert manifest['platform'] == (package_platform or expected_platform)
+        engine_manifest = manifest
+        if manifest['platform'] == 'cross-platform':
+            assert manifest['schema_version'] == 2
+            assert set(manifest['engines']) == {'macos-universal', 'windows-x86_64'}
+            for bundled in manifest['engines'].values():
+                assert hashlib.sha256((plugin / bundled['engine']).read_bytes()).hexdigest() == bundled['engine_sha256']
+            engine_manifest = manifest['engines'][expected_platform]
+            # Same choice as Engine.executable; do not rely on a manifest path alone.
+            assert engine_manifest['engine'] == ('bin/sony-pixelshift.exe' if os.name == 'nt' else 'bin/sony-pixelshift')
+            mac = manifest['engines']['macos-universal']
+            assert mac['publisher_signed'] and mac['notarized'] and mac['macos_signing'] == 'developer-id'
+        engine = plugin / engine_manifest['engine']
+        assert hashlib.sha256(engine.read_bytes()).hexdigest() == engine_manifest['engine_sha256']
         if expected_platform == 'macos-universal':
             assert engine.stat().st_mode & stat.S_IXUSR
         assert (plugin / 'Info.lua').is_file()
@@ -147,15 +158,16 @@ def main():
     source.add_argument('--archive', type=Path)
     source.add_argument('--archive-dir', type=Path)
     parser.add_argument('--platform', required=True)
+    parser.add_argument('--package-platform', choices=['cross-platform'], help='Test a combined package on --platform')
     parser.add_argument('--machine', help='Required native machine identifier(s), comma-separated')
     args = parser.parse_args()
     archive = args.archive
     if args.archive_dir:
-        matches = sorted(args.archive_dir.glob(f'*-{args.platform}.zip'))
+        matches = sorted(args.archive_dir.glob(f'*-{args.package_platform or args.platform}.zip'))
         if len(matches) != 1:
             parser.error('Expected exactly one archive for the requested platform')
         archive = matches[0]
-    smoke_test(archive, args.platform, args.machine)
+    smoke_test(archive, args.platform, args.machine, args.package_platform)
 
 
 if __name__ == '__main__':
