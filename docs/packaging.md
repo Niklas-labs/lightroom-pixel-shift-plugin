@@ -31,6 +31,9 @@ ExifTool, Rust toolchain or developer PATH is required at runtime.
 tests (including Intel). It requires matching source revisions, protocol/engine/plugin
 versions, metadata backend, and byte-identical shared Lua, configuration, notices
 and testing instructions. It rejects unexpected helpers and checksum mismatches.
+The platform assembler writes shared project text and generated JSON/notices with
+LF line endings on every OS, including when Git checked out CRLF on Windows.
+The combiner compares the resulting bytes strictly and reports mismatching paths.
 It copies each executable byte-for-byte, preserving the Mac signature and accepted
 notarization identity, and records both helper paths, hashes and signing states in
 the combined schema-2 manifest's `engines` map. Single-platform manifests remain

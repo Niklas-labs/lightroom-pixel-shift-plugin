@@ -15,6 +15,11 @@ PLUGIN_NAME = 'SonyPixelShift.lrplugin'
 PLATFORMS = {'macos-universal': 'sony-pixelshift', 'windows-x86_64': 'sony-pixelshift.exe'}
 
 
+def copy_text(source, destination):
+    """Canonical shared text, independent of the checkout's line endings."""
+    destination.write_bytes(source.read_bytes().replace(b'\r\n', b'\n'))
+
+
 def read_engine_info(binary):
     result = subprocess.run([str(binary.resolve()), 'info'], check=True, capture_output=True, text=True, encoding='utf-8')
     info = json.loads(result.stdout)
@@ -35,7 +40,7 @@ def cargo_metadata():
 def copy_notices(destination, metadata):
     """Carry dependency declarations and upstream root license/notice files."""
     destination.mkdir(parents=True)
-    shutil.copyfile(ROOT / 'LICENSE', destination / 'PROJECT-GPL-3.0.txt')
+    copy_text(ROOT / 'LICENSE', destination / 'PROJECT-GPL-3.0.txt')
     packages = []
     # Only resolved packages are included; retain build-time licenses as well.
     resolved = {node['id'] for node in metadata.get('resolve', {}).get('nodes', [])}
@@ -57,13 +62,13 @@ def copy_notices(destination, metadata):
                 shutil.copyfile(candidate, notice_dir / candidate.name)
             elif candidate.is_dir():
                 shutil.copytree(candidate, notice_dir / candidate.name, dirs_exist_ok=True)
-    (destination / 'dependency-inventory.json').write_text(json.dumps(packages, indent=2) + '\n', encoding='utf-8')
+    (destination / 'dependency-inventory.json').write_text(json.dumps(packages, indent=2) + '\n', encoding='utf-8', newline='\n')
     (destination / 'README.txt').write_text(
         'Sony Pixel Shift is GPL-3.0-or-later. Upstream dependency declarations and\n'
         'available license/notice files are included here, including rawler LGPL.\n'
         'Corresponding project source and locked dependency versions are available at:\n'
         'https://github.com/Niklas-labs/lightroom-pixel-shift-plugin\n'
-        'The package manifest records the exact source revision used for this build.\n', encoding='utf-8')
+        'The package manifest records the exact source revision used for this build.\n', encoding='utf-8', newline='\n')
 
 
 def build_package(binary, platform, output_dir, revision, metadata, info=None, macos_signing="adhoc", notarization_receipt=None):
@@ -97,8 +102,11 @@ def build_package(binary, platform, output_dir, revision, metadata, info=None, m
     plugin = stage / PLUGIN_NAME
     plugin.mkdir(parents=True)
     for source in sorted((ROOT / 'lightroom' / PLUGIN_NAME).glob('*.lua')):
-        shutil.copyfile(source, plugin / source.name)
+        copy_text(source, plugin / source.name)
     shutil.copytree(ROOT / 'config', plugin / 'config')
+    for path in (plugin / 'config').rglob('*'):
+        if path.is_file() and path.suffix in ('.yaml', '.yml', '.json'):
+            copy_text(path, path)
     engine = plugin / 'bin' / PLATFORMS[platform]
     engine.parent.mkdir()
     shutil.copyfile(binary, engine)
@@ -122,11 +130,11 @@ def build_package(binary, platform, output_dir, revision, metadata, info=None, m
         'macos_signing': macos_signing if platform == 'macos-universal' else None,
         'notarization_submission_id': notarization_receipt['id'] if notarized else None,
     }
-    (plugin / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
+    (plugin / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8', newline='\n')
     copy_notices(plugin / 'licenses', metadata)
     testing = ROOT / 'docs' / 'lightroom-testing.md'
     if testing.is_file():
-        shutil.copyfile(testing, stage / 'TESTING.md')
+        copy_text(testing, stage / 'TESTING.md')
     signing_notes = (
         'The embedded macOS helper is Developer ID signed and notarized by Apple.\n'
         'This ZIP cannot carry a stapled ticket; first-run verification may need internet.\n'
@@ -153,7 +161,7 @@ def build_package(binary, platform, output_dir, revision, metadata, info=None, m
         'Adobe Adaptive profiles and AI Denoise need Lightroom host verification.\n'
         'Output regions are streamed; choose Memory: Disk (less RAM) to use scratch files.\n'
         'DNG compression is lossless. Keep original RAWs; 16-shot sources alone\n'
-        'use about 1.95 GB packed RAM or scratch disk at 61 MP, plus decoder working memory.\n', encoding='utf-8')
+        'use about 1.95 GB packed RAM or scratch disk at 61 MP, plus decoder working memory.\n', encoding='utf-8', newline='\n')
     archive = output_dir / f'SonyPixelShift-{version}-{platform}.zip'
     with zipfile.ZipFile(archive, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as zipped:
         for path in sorted(stage.rglob('*')):
@@ -167,7 +175,7 @@ def build_package(binary, platform, output_dir, revision, metadata, info=None, m
             entry.compress_type = zipfile.ZIP_DEFLATED
             zipped.writestr(entry, path.read_bytes())
     checksum = hashlib.sha256(archive.read_bytes()).hexdigest()
-    archive.with_suffix('.zip.sha256').write_text(f'{checksum}  {archive.name}\n', encoding='ascii')
+    archive.with_suffix('.zip.sha256').write_text(f'{checksum}  {archive.name}\n', encoding='ascii', newline='\n')
     summary = os.environ.get('GITHUB_STEP_SUMMARY')
     if summary:
         with open(summary, 'a', encoding='utf-8') as report:

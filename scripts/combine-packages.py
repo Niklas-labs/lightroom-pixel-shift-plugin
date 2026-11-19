@@ -57,8 +57,11 @@ def combine(macos, windows, output_dir):
     shared = lambda files: {p: data for p, data in files.items()
                             if p.startswith(PLUGIN) and p != PLUGIN + 'manifest.json'
                             and not p.startswith(PLUGIN + 'bin/')}
-    if shared(mac_files) != shared(win_files):
-        raise ValueError('Shared plugin files, configuration and notices differ')
+    mac_shared, win_shared = shared(mac_files), shared(win_files)
+    differences = [p for p in sorted(mac_shared.keys() | win_shared.keys())
+                   if mac_shared.get(p) != win_shared.get(p)]
+    if differences:
+        raise ValueError('Shared plugin files, configuration and notices differ: ' + ', '.join(differences))
     if mac_files.get('TESTING.md') != win_files.get('TESTING.md'):
         raise ValueError('Testing instructions differ')
     manifest = {'schema_version': 2, 'platform': 'cross-platform',

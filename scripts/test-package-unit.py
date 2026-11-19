@@ -5,10 +5,12 @@ import importlib.util
 import json
 import os
 import subprocess
+import shutil
 from pathlib import Path
 import stat
 import tempfile
 import unittest
+from unittest.mock import patch
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -92,6 +94,32 @@ class PackagingTests(unittest.TestCase):
                            cwd=self.root, check=True, capture_output=True, text=True)
         checksum = archive.with_suffix('.zip.sha256').read_text().split()[0]
         self.assertEqual(checksum, hashlib.sha256(archive.read_bytes()).hexdigest())
+
+    def test_combined_with_windows_checkout_and_native_text_writes(self):
+        mac, _ = self.components()
+        checkout = self.root / 'Windows checkout'
+        for directory in ('lightroom', 'config', 'docs'):
+            shutil.copytree(ROOT / directory, checkout / directory)
+        shutil.copyfile(ROOT / 'LICENSE', checkout / 'LICENSE')
+        for source in checkout.rglob('*'):
+            if source.is_file():
+                source.write_bytes(source.read_bytes().replace(b'\r\n', b'\n').replace(b'\n', b'\r\n'))
+        original_write_text = Path.write_text
+
+        def windows_write_text(path, data, *args, **kwargs):
+            # Python's default write translation on Windows, even with an LF checkout.
+            kwargs.setdefault('newline', '\r\n')
+            return original_write_text(path, data, *args, **kwargs)
+
+        with patch.object(PACKAGER, 'ROOT', checkout), patch.object(Path, 'write_text', windows_write_text):
+            win = PACKAGER.build_package(self.binary, 'windows-x86_64', self.root / 'windows-checkout-dist',
+                                        'a'*40, self.metadata, self.info)
+        archive = COMBINE.combine(mac, win, self.root / 'combined-windows-checkout')
+        with zipfile.ZipFile(archive) as zipped, zipfile.ZipFile(win) as windows_zip:
+            for name in zipped.namelist():
+                if name.endswith(('.lua', '.yaml', '.json', '.txt', '.md')):
+                    self.assertNotIn(b'\r\n', zipped.read(name), name)
+            self.assertEqual(windows_zip.read('SonyPixelShift.lrplugin/bin/sony-pixelshift.exe'), self.binary.read_bytes())
 
     def test_combined_rejects_mixed_builds_and_divergent_shared_files(self):
         for change in ('source_revision', 'engine_version', 'plugin_version', 'protocol_version',
