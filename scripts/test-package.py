@@ -94,8 +94,9 @@ def smoke_test(archive, expected_platform, expected_machine=None, package_platfo
         assert any(word in info['metadata_backend'].lower() for word in ('native', 'rust'))
         assert info['sequence_detection'] is True
         sequence_root = root / 'sequence discovery'
+        python_env = dict(os.environ, PYTHONIOENCODING='utf-8')
         subprocess.run([sys.executable, str(ROOT / 'scripts/generate-sequence-fixtures.py'), str(sequence_root)],
-                       check=True, capture_output=True, text=True, encoding='utf-8')
+                       env=python_env, check=True, capture_output=True, text=True, encoding='utf-8')
         sequence_output = root / 'sequences.json'
         sequence_run = run_engine(engine, ['detect-sequences', '--request', sequence_root / 'sequence-request.json',
                                           '--output', sequence_output], env, check=True)
@@ -111,7 +112,6 @@ def smoke_test(archive, expected_platform, expected_machine=None, package_platfo
                                              '--output', sequence_output], env)
         assert duplicate_result.returncode != 0
         demo = root / 'demo'
-        python_env = dict(os.environ, PYTHONIOENCODING='utf-8')
         subprocess.run([sys.executable, str(ROOT / 'scripts' / 'generate-demo.py'), str(demo)], env=python_env, check=True,
                        capture_output=True, text=True, encoding='utf-8')
         inspected = run_engine(engine, ['inspect', demo / 'capture-metadata.ARW'], env, check=True)
