@@ -32,6 +32,15 @@ Select exactly four or sixteen original a7CR Pixel Shift ARWs, then choose
 The result is saved beside the sources, for example
 `DSC01582-DSC01585-PixelShift.dng`; existing files receive a unique suffix.
 Select sources from one folder. Burst results use `-NoiseReduced.dng`.
+
+To find sequences in a larger selection, open Library folders, select the photos,
+then choose **Library → Plug-in Extras → Find Pixel Shift sequences**. Review
+complete 4-/16-shot sequences and any incomplete/conflicting groups, then select
+a sequence for merging or Lightroom's **Photo → Stacking → Group into Stack**.
+**Next Pixel Shift sequence** advances through the same search results. Discovery
+reads capture headers without decoding sensor pixels; existing stacks, virtual
+copies and non-ARWs are skipped. Lightroom's public SDK cannot stack existing
+catalog photos directly. See [the short workflow](docs/lightroom-testing.md#find-pixel-shift-sequences).
 The plugin checks its engine version, runs asynchronously and imports only a
 validated completed result, confirms its catalog entry and attempts to select it
 without changing your library filters or current collection. A separate menu
@@ -73,11 +82,19 @@ Install stable Rust, then:
 cargo build --release --locked
 ./target/release/sony-pixelshift info
 ./target/release/sony-pixelshift merge --job /photos/capture/job.json
+./target/release/sony-pixelshift detect-sequences --request /photos/selection.json --output /photos/sequences.json
 cargo test --workspace --locked
 cargo clippy --workspace --all-targets --locked -- -D warnings
 lua scripts/test-plugin.lua
 python3 scripts/test-package-unit.py
 ```
+
+Sequence discovery requests use `{"version":1,"inputs":["DSC00001.ARW", "DSC00002.ARW"]}`.
+Include the entire selection, not just those two example paths. Paths resolve
+relative to the request file. The JSON report separates `complete`, `incomplete`,
+`ambiguous` and `unsupported` groups from ordinary sources (`ignored`) and read
+failures (`errors`). Outputs are never overwritten. Discovery does not decode
+sensor pixels or create stacks.
 
 Example `job.json` (paths resolve against its directory):
 

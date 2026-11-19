@@ -43,7 +43,7 @@ pub fn preflight(
     paths.clone_from_slice(&ordered);
     Ok(camera)
 }
-fn validate(
+pub(crate) fn validate(
     captures: &[Capture],
     mode: Mode,
     requested: Option<&str>,

@@ -66,8 +66,14 @@ files can be incomplete parts of different captures.
   calibration by themselves.
 - [ ] Add other Sony models incrementally with reference captures and acceptance
   tests. Leave seams for other pixel-shift formats without implementing them yet.
-- [ ] Consider batch grouping of larger selections later; group by capture
-  metadata rather than splitting every four/sixteen consecutive filenames.
+- [x] Add header-only detection of multiple complete 4-/16-shot sequences in
+  larger selections, grouped by folder/model/serial/group ID, with missing,
+  duplicate/conflicting, unreadable and unsupported reports. Preview and select
+  complete groups in Lightroom; advance with Next Pixel Shift sequence. Native
+  Group into Stack is manual because the public SDK cannot stack existing photos.
+- [ ] Validate real-capture sequence discovery and selection in Lightroom,
+  including filters, mixed selections, collapsed stacks, offline sources and
+  captures whose camera serial is absent. Batch merging remains separate.
 
 Acceptance: automatic selection for verified captures, actionable rejection for
 ambiguous/unsupported inputs, and no silent use of the a7CR layout for an unknown

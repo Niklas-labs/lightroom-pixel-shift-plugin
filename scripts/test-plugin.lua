@@ -41,7 +41,7 @@ assert(not pcall(engine.checkManifest, {protocol_version=2,engine_version='0.1.0
 assert(not pcall(engine.checkInfo, {protocol_version=1, engine_version='0.1.0',camera_models={'ILCE-7CR'},autodetection=true}, manifest))
 assert(not pcall(engine.checkInfo, {protocol_version=1,engine_version='9.0',camera_models={'ILCE-7CR'},autodetection=true,output_formats={'dng','tiff'},source_storages={'ram','disk'},streamed_output=true,output_compressions={'lossless','none'}}, manifest))
 local info = dofile('lightroom/SonyPixelShift.lrplugin/Info.lua')
-assert(#info.LrLibraryMenuItems == 6 and info.LrExportMenuItems == nil)
+assert(#info.LrLibraryMenuItems == 8 and info.LrExportMenuItems == nil)
 for _, menu in ipairs({info.LrLibraryMenuItems}) do
     for _, item in ipairs(menu) do
         assert(type(item.title) == 'string' and #item.title > 0)
@@ -56,3 +56,4 @@ dofile('scripts/test-progress.lua')
 dofile('scripts/test-stack-flags.lua')
 
 dofile('scripts/test-stack-rejection-sync.lua')
+dofile('scripts/test-sequences.lua')

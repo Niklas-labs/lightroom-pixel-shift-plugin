@@ -68,6 +68,41 @@ helper launched: changing quarantine will not fix that metadata error.
 
 Developer ID signing and notarized distribution are tracked in ROADMAP.md.
 
+## Find Pixel Shift sequences
+
+1. Open the desired **Library folders**, clear filters, and select the photos to
+   search (Cmd+A on Mac / Ctrl+A on Windows for the visible folder photos).
+2. Choose **Library → Plug-in Extras → Find Pixel Shift sequences**.
+3. Review the summary and choose a complete **4 shots** or **16 shots** sequence.
+   Click **Select sequence**. The first source shot becomes the active photo.
+4. Merge using the existing Pixel Shift command, or press **Cmd+G** (Mac) /
+   **Ctrl+G** (Windows): **Photo → Stacking → Group into Stack**.
+5. Choose **Library → Plug-in Extras → Next Pixel Shift sequence** to advance
+   through this search. Results last until Lightroom/plugin reload or a new search.
+   It skips groups that have since been stacked and stops at the end.
+
+The search covers selected, unstacked original ARWs only. It skips existing folder
+stacks, virtual copies and other formats, and reports unreadable/offline files.
+Include all sources in the selection; hidden or unselected shots are not searched.
+An incomplete selection is reported as incomplete, even if the other shots exist
+elsewhere. Keep the searched folders visible and filters clear when advancing.
+
+Detection uses the Sony Pixel Shift group ID, camera model/serial where available,
+folder, shot count and shot indices. Complete sequences also pass the merger's
+dimension and exposure checks. Missing shots, duplicate indices (including reused
+group IDs), conflicting headers and unsupported camera profiles are reported;
+they cannot be selected through the sequence picker. Ordinary bursts/exposure
+brackets are not guessed from timestamps or consecutive filenames. If the camera
+serial is absent, the review explicitly warns that camera identity is incomplete.
+Currently the registered profile is a7CR; real-capture support remains experimental.
+
+The plugin only selects photos. Lightroom's public SDK exposes no API to stack
+existing catalog photos; use the native Group into Stack command. It does not
+merge, change flags, create collections, or write RAW/XMP files during discovery.
+There is an indeterminate progress scope while metadata is read; cancellation
+and per-file progress are not yet exposed. [Shortcut setup](#macos-shortcut-setup)
+also applies to the two sequence commands.
+
 ## Stack flags and keyboard shortcuts
 
 In **Library**, open a folder in the **Folders** panel, select a photo or stack,
@@ -107,11 +142,14 @@ reverse the sync.
    Reject entire stack
    Unflag entire stack
    Sync rejection from stack top
+   Find Pixel Shift sequences
+   Next Pixel Shift sequence
 ```
 
 4. Set a shortcut and click **Done**. Repeat for the other commands. Suggested
    shortcuts: **Control–Option–P**, **Control–Option–X**, **Control–Option–U**;
    use **Control–Option–S** for rejection sync.
+   For sequence search/next, use **Control–Option–F** / **Control–Option–N**.
 
 In Library, check the shortcut appears beside the command. If it does not, check
 spaces/capitalization and restart Lightroom. These are macOS App Shortcuts; the
@@ -300,3 +338,19 @@ a host test; the CI exFAT fixture test proves filesystem behavior on a disk imag
   stack follows its own top; the unstacked photo stays unchanged. Check Undo.
 - Repeat an aligned sync: it reports no change. With no selection, it must stop
   rather than applying to the whole filmstrip. Folder-source restrictions still apply.
+
+### Sequence discovery host checks (build 17)
+
+- Select a folder containing complete 4- and 16-shot captures plus ordinary photos.
+  Verify the picker groups each capture correctly and selects exactly its sources,
+  with shot 1 active. Merge one selected group through the existing command.
+- Group one result with Cmd+G / Ctrl+G, then use Next Pixel Shift sequence.
+  Verify it selects the next full capture and leaves flags and Develop edits intact.
+- Omit one source, duplicate a source under another filename, and take one source
+  offline. Confirm incomplete/conflicting/read errors and no partial selection.
+- Include existing collapsed stacks and virtual copies; confirm they are skipped.
+  Try filters hiding a member and navigate away before Next: incomplete selection
+  must show an error. Clear filters/return to the searched folders and retry.
+- Cancel the results dialog, select nothing, and try a collection. Confirm no
+  catalog metadata changes, source writes or residual temporary request files.
+  Restart/reload the plugin: Next must ask for a fresh search.

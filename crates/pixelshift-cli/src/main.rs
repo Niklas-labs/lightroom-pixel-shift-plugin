@@ -17,6 +17,7 @@ use std::{
 
 mod detection;
 mod metrics;
+mod sequences;
 
 const PROTOCOL_VERSION: u32 = 1;
 #[derive(Parser)]
@@ -66,6 +67,14 @@ enum Commands {
     },
     /// List registered camera profiles and validation status.
     Cameras,
+    /// Find complete Pixel Shift sequences in a larger selection, without decoding RAW pixels.
+    DetectSequences {
+        /// JSON {"version":1,"inputs":[...]}; paths relative to this file.
+        #[arg(long)]
+        request: PathBuf,
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
 }
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -155,6 +164,7 @@ fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
             "experimental": true,
             "autodetection": true,
             "sensor_sample_diagnostics": true,
+            "sequence_detection": true,
         })),
         Commands::Inspect {
             input,
@@ -173,6 +183,24 @@ fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
         }
         Commands::Cameras => {
             Ok(json!({"camera_models":models,"profiles":catalog.cameras,"experimental":true}))
+        }
+        Commands::DetectSequences { request, .. } => {
+            #[derive(Deserialize)]
+            #[serde(deny_unknown_fields)]
+            struct Request {
+                version: u32,
+                inputs: Vec<PathBuf>,
+            }
+            let spec: Request = serde_json::from_reader(File::open(request)?)?;
+            ensure!(
+                spec.version == PROTOCOL_VERSION,
+                "unsupported sequence request version"
+            );
+            let base = request.parent().unwrap_or(Path::new("."));
+            sequences::scan(
+                spec.inputs.iter().map(|p| resolve(base, p)).collect(),
+                &catalog,
+            )
         }
         Commands::Merge {
             job,
@@ -551,7 +579,9 @@ fn execute(cli: &Cli, diagnostics: &mut Diagnostics) -> Result<Value> {
 }
 fn run(cli: Cli) -> i32 {
     let result_path = match &cli.command {
-        Commands::Info { output } | Commands::Inspect { output, .. } => output.as_ref(),
+        Commands::Info { output }
+        | Commands::Inspect { output, .. }
+        | Commands::DetectSequences { output, .. } => output.as_ref(),
         Commands::Merge { result, .. } => result.as_ref(),
         Commands::Cameras => None,
     };

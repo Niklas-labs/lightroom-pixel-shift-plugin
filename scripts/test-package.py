@@ -92,6 +92,24 @@ def smoke_test(archive, expected_platform, expected_machine=None, package_platfo
         assert info['camera_profile_schema_version'] == 1
         assert info['camera_models'] == [c['model'] for c in load_yaml((plugin / 'config' / 'camera-profiles.yaml').read_text(encoding='utf-8'))['cameras']]
         assert any(word in info['metadata_backend'].lower() for word in ('native', 'rust'))
+        assert info['sequence_detection'] is True
+        sequence_root = root / 'sequence discovery'
+        subprocess.run([sys.executable, str(ROOT / 'scripts/generate-sequence-fixtures.py'), str(sequence_root)],
+                       check=True, capture_output=True, text=True, encoding='utf-8')
+        sequence_output = root / 'sequences.json'
+        sequence_run = run_engine(engine, ['detect-sequences', '--request', sequence_root / 'sequence-request.json',
+                                          '--output', sequence_output], env, check=True)
+        sequences = json.loads(sequence_run.stdout)
+        assert json.loads(sequence_output.read_text(encoding='utf-8')) == sequences
+        assert sequences['version'] == 1 and sequences['status'] == 'detected'
+        assert sorted(g['status'] for g in sequences['groups']) == ['ambiguous','ambiguous','complete','complete','incomplete','unsupported']
+        complete = [g for g in sequences['groups'] if g['status'] == 'complete']
+        assert sorted(g['shot_count'] for g in complete) == [4,16]
+        assert all(g['files'][0].endswith('-0.ARW') for g in complete)
+        assert len(sequences['errors']) == len(sequences['ignored']) == 1
+        duplicate_result = run_engine(engine, ['detect-sequences', '--request', sequence_root / 'sequence-request.json',
+                                             '--output', sequence_output], env)
+        assert duplicate_result.returncode != 0
         demo = root / 'demo'
         python_env = dict(os.environ, PYTHONIOENCODING='utf-8')
         subprocess.run([sys.executable, str(ROOT / 'scripts' / 'generate-demo.py'), str(demo)], env=python_env, check=True,
