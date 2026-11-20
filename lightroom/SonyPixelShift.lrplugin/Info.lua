@@ -8,6 +8,7 @@ local menuItems = {
     { title = 'Reject entire stack', file = 'RejectStack.lua' },
     { title = 'Unflag entire stack', file = 'UnflagStack.lua' },
     { title = 'Sync rejection from stack top', file = 'SyncStackRejection.lua' },
+    { title = 'Reject hidden photos in collapsed stacks', file = 'RejectHiddenStackPhotos.lua' },
 }
 return {
     LrSdkVersion = 6.0,
@@ -15,5 +16,5 @@ return {
     LrToolkitIdentifier = 'org.sonypixelshift.lightroom',
     LrPluginName = 'Sony Pixel Shift (Experimental)',
     LrLibraryMenuItems = menuItems,
-    VERSION = { major = 0, minor = 1, revision = 0, build = 17 },
+    VERSION = { major = 0, minor = 1, revision = 0, build = 18 },
 }

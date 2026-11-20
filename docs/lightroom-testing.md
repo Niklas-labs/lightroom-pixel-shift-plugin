@@ -131,6 +131,27 @@ you select a lower member. Hidden members are included; unstacked photos are
 ignored. Already synchronized stacks create no changes. Use **Edit → Undo** to
 reverse the sync.
 
+### Reject hidden photos after arranging stacks
+
+Bring each keeper to the top of its stack. Leave stacks **expanded** when you
+want to keep all their photos visible, then select the stacks/photos to process
+(Cmd+A on Mac / Ctrl+A on Windows for all visible photos in the current folders).
+Choose **Library → Plug-in Extras → Reject hidden photos in collapsed stacks**.
+
+- **Collapsed stack:** reject every photo below the actual top, including picks.
+- **Top photo:** preserve its existing flag, including any existing rejection.
+- **Expanded stack or unstacked photo:** leave every flag unchanged.
+
+The command acts only on selected folder stacks; hidden collapsed members are
+included automatically. It preserves stack order, selection, expansion and filters,
+works with any photo format, and uses one catalog write operation with **Edit →
+Undo**. If expansion/order/membership changes while waiting for catalog access,
+it stops before changing flags. Already rejected lower photos are not written again.
+
+Expanding a stack exempts it from this command; it does not clear previous
+rejections. Use **Unflag entire stack** if you need to clear those first.
+This command does not launch the RAW helper or write image files.
+
 ### macOS shortcut setup
 
 1. Open **System Settings → Keyboard → Keyboard Shortcuts → App Shortcuts**.
@@ -142,6 +163,7 @@ reverse the sync.
    Reject entire stack
    Unflag entire stack
    Sync rejection from stack top
+   Reject hidden photos in collapsed stacks
    Find Pixel Shift sequences
    Next Pixel Shift sequence
 ```
@@ -150,6 +172,7 @@ reverse the sync.
    shortcuts: **Control–Option–P**, **Control–Option–X**, **Control–Option–U**;
    use **Control–Option–S** for rejection sync.
    For sequence search/next, use **Control–Option–F** / **Control–Option–N**.
+   For collapsed-stack culling, use **Control–Option–R**.
 
 In Library, check the shortcut appears beside the command. If it does not, check
 spaces/capitalization and restart Lightroom. These are macOS App Shortcuts; the
@@ -354,3 +377,18 @@ a host test; the CI exFAT fixture test proves filesystem behavior on a disk imag
 - Cancel the results dialog, select nothing, and try a collection. Confirm no
   catalog metadata changes, source writes or residual temporary request files.
   Restart/reload the plugin: Next must ask for a fresh search.
+
+### Collapsed-stack rejection host checks (build 18)
+
+- Put a picked photo on top of a collapsed stack with picked and unflagged lower
+  photos. Select it and run the command: top stays picked, all lower photos reject.
+- Expand another stack containing mixed flags and select both stacks plus an
+  unstacked photo. Only the collapsed stack's lower members should change.
+- Reorder a stack so a different photo is top. The new top's flag must survive.
+  Check RAW/JPEG and virtual-copy members, and verify Edit → Undo restores flags.
+- Repeat with lower members already rejected: expect a brief no-change message.
+  With expanded stacks only, expect No collapsed folder stacks selected.
+- Deselect everything or open a collection: it must stop without writing flags.
+  Clear filters when reviewing results; the command does not change filters.
+- Assign the documented macOS shortcut. Verify stack order, expansion and photo
+  selection stay unchanged and there is no RAW-helper execution.

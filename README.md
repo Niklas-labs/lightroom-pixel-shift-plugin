@@ -152,7 +152,14 @@ the decoder.
 stack**, and **Unflag entire stack** for selected folder stacks, including hidden
 members. **Sync rejection from stack top** applies each selected stack top's
 rejected/not-rejected state to the remaining members after normal culling, preserving
-picks when clearing rejections. Works with any photo format. See the [brief keyboard shortcut setup](docs/lightroom-testing.md#stack-flags-and-keyboard-shortcuts).
+picks when clearing rejections.
+
+**Reject hidden photos in collapsed stacks** supports keeper-first culling:
+bring each keeper to the top, expand stacks you want to keep in full, select the
+photos/stacks, then run the command. It preserves each collapsed stack top's flag,
+rejects its lower members (including picks), and leaves expanded stacks and
+unstacked photos unchanged. It supports Undo and never clears old rejections.
+Works with any photo format. See the [brief keyboard shortcut setup](docs/lightroom-testing.md#stack-flags-and-keyboard-shortcuts).
 
 ## Implemented and next
 

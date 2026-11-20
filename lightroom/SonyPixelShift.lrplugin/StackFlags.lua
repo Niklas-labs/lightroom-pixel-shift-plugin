@@ -9,6 +9,7 @@ local actions = {
     [-1] = { title = 'Reject entire stack', verb = 'Rejected' },
     [0] = { title = 'Unflag entire stack', verb = 'Unflagged' },
     sync_rejection = { title = 'Sync rejection from stack top', verb = 'Synced rejection on' },
+    reject_hidden = { title = 'Reject hidden photos in collapsed stacks', verb = 'Rejected' },
 }
 local function check(condition, message)
     if not condition then error(message, 0) end
@@ -53,7 +54,7 @@ local function collect(selected)
     end
     return photos, stacks
 end
-local function rejectionChanges(stacks)
+local function rejectionChanges(stacks, rejectHidden)
     local changes, owned = {}, {}
     for _, members in ipairs(stacks) do
         local top, positions = nil, {}
@@ -80,7 +81,7 @@ local function rejectionChanges(stacks)
                 check(current == -1 or current == 0 or current == 1,
                     'Could not read a stack member rejection flag. Retry the command.')
                 local desired = current
-                if topStatus == -1 then desired = -1
+                if rejectHidden or topStatus == -1 then desired = -1
                 elseif current == -1 then desired = 0 end
                 if desired ~= current then
                     changes[#changes+1] = { photo = member, status = desired }
@@ -89,6 +90,46 @@ local function rejectionChanges(stacks)
         end
     end
     return changes
+end
+local function collapsedStacks(stacks)
+    local result, positions = {}, {}
+    for _, members in ipairs(stacks) do
+        local collapsed = members[1]:getRawMetadata('stackInFolderIsCollapsed')
+        check(type(collapsed) == 'boolean', 'Could not read whether a stack is collapsed. Retry the command.')
+        for _, member in ipairs(members) do
+            check(member:getRawMetadata('stackInFolderIsCollapsed') == collapsed,
+                'Stack expansion changed. Retry the command.')
+        end
+        if collapsed then
+            result[#result+1] = members
+            for _, member in ipairs(members) do
+                positions[identifier(member)] = member:getRawMetadata('stackPositionInFolder')
+            end
+        end
+    end
+    return result, positions
+end
+local function verifyCollapsed(stacks, positions)
+    -- A busy catalog can yield while waiting for write access. Do not reject a
+    -- stack the user has since expanded, or write to a newly promoted top.
+    for _, members in ipairs(stacks) do
+        local expected, seen = {}, {}
+        for _, member in ipairs(members) do expected[identifier(member)] = true end
+        local current = members[1]:getRawMetadata('stackInFolderMembers')
+        check(type(current) == 'table' and #current == #members and
+            members[1]:getRawMetadata('countStackInFolderMembers') == #members,
+            'Stack membership changed. Retry the command.')
+        for _, member in ipairs(current) do
+            local id = identifier(member)
+            check(expected[id] and not seen[id], 'Stack membership changed. Retry the command.')
+            seen[id] = true
+        end
+        for _, member in ipairs(members) do
+            check(member:getRawMetadata('stackInFolderIsCollapsed') == true and
+                member:getRawMetadata('stackPositionInFolder') == positions[identifier(member)],
+                'Stack expansion or order changed. Retry the command.')
+        end
+    end
 end
 function M.apply(catalog, status)
     local action = actions[status]
@@ -110,8 +151,11 @@ function M.apply(catalog, status)
     -- Read membership before the write gate. Include hidden/collapsed members,
     -- deduplicate selected siblings and handle selected unstacked photos too.
     local photos, stacks = collect(selected)
-    local changes = {}
-    if status == 'sync_rejection' then changes = rejectionChanges(stacks)
+    local changes, positions = {}, nil
+    if status == 'reject_hidden' then
+        stacks, positions = collapsedStacks(stacks)
+        changes = rejectionChanges(stacks, true)
+    elseif status == 'sync_rejection' then changes = rejectionChanges(stacks)
     else
         for _, photo in ipairs(photos) do changes[#changes+1] = { photo = photo, status = status } end
     end
@@ -120,6 +164,7 @@ function M.apply(catalog, status)
     if #changes == 0 then return 0, #stacks end
     local callbackRan = false
     local result = catalog:withWriteAccessDo(action.title, function()
+        if status == 'reject_hidden' then verifyCollapsed(stacks, positions) end
         for _, change in ipairs(changes) do change.photo:setRawMetadata('pickStatus', change.status) end
         callbackRan = true
     end, { timeout = 30 })
@@ -135,7 +180,10 @@ function M.start(status)
             count, stackCount = M.apply(LrApplication.activeCatalog(), status)
         end)
         busy = false
-        if ok and status == 'sync_rejection' and count == 0 then
+        if ok and status == 'reject_hidden' and count == 0 then
+            LrDialogs.showBezel(stackCount == 0 and 'No collapsed folder stacks selected.' or
+                'Hidden stack photos are already rejected.', 1.5)
+        elseif ok and status == 'sync_rejection' and count == 0 then
             LrDialogs.showBezel(stackCount == 0 and 'No folder stacks selected.' or
                 'Rejection already matches stack tops.', 1.5)
         elseif ok then
